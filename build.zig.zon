@@ -1,0 +1,12 @@
+.{
+    .name = .eyes,
+    .version = "0.1.0",
+    .fingerprint = 0xa71a34960c8328c8,
+    .minimum_zig_version = "0.15.2",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "resources",
+    },
+}
