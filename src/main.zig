@@ -43,6 +43,22 @@ fn registerAppDelegate() objc.Class {
     _ = objc.addMethod(cls, objc.sel("micInterval10:"), @ptrCast(&micInterval10), "v@:@");
     _ = objc.addMethod(cls, objc.sel("micInterval30:"), @ptrCast(&micInterval30), "v@:@");
 
+    // Posture reminder
+    _ = objc.addMethod(cls, objc.sel("postureInterval5s:"), @ptrCast(&postureInterval5s), "v@:@");
+    _ = objc.addMethod(cls, objc.sel("togglePostureReminder:"), @ptrCast(&togglePostureReminder), "v@:@");
+    _ = objc.addMethod(cls, objc.sel("postureInterval15:"), @ptrCast(&postureInterval15), "v@:@");
+    _ = objc.addMethod(cls, objc.sel("postureInterval30:"), @ptrCast(&postureInterval30), "v@:@");
+    _ = objc.addMethod(cls, objc.sel("postureInterval45:"), @ptrCast(&postureInterval45), "v@:@");
+    _ = objc.addMethod(cls, objc.sel("postureInterval60:"), @ptrCast(&postureInterval60), "v@:@");
+
+    // Blink reminder
+    _ = objc.addMethod(cls, objc.sel("toggleBlinkReminder:"), @ptrCast(&toggleBlinkReminder), "v@:@");
+    _ = objc.addMethod(cls, objc.sel("blinkInterval5s:"), @ptrCast(&blinkInterval5s), "v@:@");
+    _ = objc.addMethod(cls, objc.sel("blinkInterval15:"), @ptrCast(&blinkInterval15), "v@:@");
+    _ = objc.addMethod(cls, objc.sel("blinkInterval30:"), @ptrCast(&blinkInterval30), "v@:@");
+    _ = objc.addMethod(cls, objc.sel("blinkInterval45:"), @ptrCast(&blinkInterval45), "v@:@");
+    _ = objc.addMethod(cls, objc.sel("blinkInterval60:"), @ptrCast(&blinkInterval60), "v@:@");
+
     // Interval presets
     _ = objc.addMethod(cls, objc.sel("preset20_20:"), @ptrCast(&preset20_20), "v@:@");
     _ = objc.addMethod(cls, objc.sel("preset30_30:"), @ptrCast(&preset30_30), "v@:@");
@@ -136,6 +152,89 @@ fn togglePauseDuringMeetings(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) v
     menubar_mod.updateMenu();
 }
 
+// Posture reminder callbacks
+fn togglePostureReminder(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    app_mod.state.posture_reminder_enabled = !app_mod.state.posture_reminder_enabled;
+    std.log.info("Posture toggle: enabled={}, interval={d}s", .{ app_mod.state.posture_reminder_enabled, app_mod.state.posture_interval_secs });
+    if (app_mod.state.posture_reminder_enabled) {
+        app_mod.state.seconds_until_posture = @intCast(app_mod.state.posture_interval_secs);
+    } else {
+        // Dismiss if currently showing
+        if (app_mod.state.is_posture_showing) {
+            const posture = @import("posture.zig");
+            posture.hidePostureReminder();
+            app_mod.state.is_posture_showing = false;
+        }
+    }
+    app_mod.saveConfig();
+    menubar_mod.updateMenu();
+}
+
+fn setPostureInterval(secs: u32) void {
+    std.log.info("Posture interval set: {d}s", .{secs});
+    app_mod.state.posture_interval_secs = secs;
+    app_mod.state.seconds_until_posture = @intCast(secs);
+    app_mod.saveConfig();
+    menubar_mod.updateMenu();
+}
+
+fn postureInterval5s(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setPostureInterval(5);
+}
+fn postureInterval15(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setPostureInterval(15 * 60);
+}
+fn postureInterval30(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setPostureInterval(30 * 60);
+}
+fn postureInterval45(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setPostureInterval(45 * 60);
+}
+fn postureInterval60(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setPostureInterval(60 * 60);
+}
+
+// Blink reminder callbacks
+fn toggleBlinkReminder(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    app_mod.state.blink_reminder_enabled = !app_mod.state.blink_reminder_enabled;
+    std.log.info("Blink toggle: enabled={}, interval={d}s", .{ app_mod.state.blink_reminder_enabled, app_mod.state.blink_interval_secs });
+    if (app_mod.state.blink_reminder_enabled) {
+        app_mod.state.seconds_until_blink = @intCast(app_mod.state.blink_interval_secs);
+    } else {
+        if (app_mod.state.is_blink_showing) {
+            const blink_mod = @import("blink.zig");
+            blink_mod.hideBlinkReminder();
+            app_mod.state.is_blink_showing = false;
+        }
+    }
+    app_mod.saveConfig();
+    menubar_mod.updateMenu();
+}
+
+fn setBlinkInterval(secs: u32) void {
+    std.log.info("Blink interval set: {d}s", .{secs});
+    app_mod.state.blink_interval_secs = secs;
+    app_mod.state.seconds_until_blink = @intCast(secs);
+    app_mod.saveConfig();
+    menubar_mod.updateMenu();
+}
+
+fn blinkInterval5s(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setBlinkInterval(5);
+}
+fn blinkInterval15(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setBlinkInterval(15 * 60);
+}
+fn blinkInterval30(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setBlinkInterval(30 * 60);
+}
+fn blinkInterval45(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setBlinkInterval(45 * 60);
+}
+fn blinkInterval60(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setBlinkInterval(60 * 60);
+}
+
 // Interval preset callbacks
 fn applyPreset(work: u32, brk: u32) void {
     app_mod.applyConfig(.{
@@ -144,6 +243,10 @@ fn applyPreset(work: u32, brk: u32) void {
         .show_timer_in_menubar = app_mod.state.show_timer_in_menubar,
         .pause_during_meetings = app_mod.state.pause_during_meetings,
         .mic_check_interval_secs = app_mod.state.mic_check_interval_secs,
+        .posture_reminder_enabled = app_mod.state.posture_reminder_enabled,
+        .posture_interval_secs = app_mod.state.posture_interval_secs,
+        .blink_reminder_enabled = app_mod.state.blink_reminder_enabled,
+        .blink_interval_secs = app_mod.state.blink_interval_secs,
     });
     menubar_mod.updateMenu();
 }

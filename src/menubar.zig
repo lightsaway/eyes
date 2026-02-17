@@ -217,6 +217,66 @@ pub fn updateMenu() void {
     appkit.setSubmenu(meetings_item, meetings_menu);
     appkit.addItem(m, meetings_item);
 
+    // Posture Reminder submenu
+    const posture_item = appkit.createMenuItem("Posture Reminder", null, "");
+    const posture_menu = appkit.createMenu();
+
+    const posture_toggle = appkit.createMenuItem("Enabled", objc.sel("togglePostureReminder:"), "");
+    appkit.setTarget(posture_toggle, delegate);
+    appkit.setMenuItemState(posture_toggle, app_mod.state.posture_reminder_enabled);
+    appkit.addItem(posture_menu, posture_toggle);
+
+    appkit.addItem(posture_menu, appkit.createSeparator());
+
+    const posture_intervals = [_]struct { secs: u32, label: [*:0]const u8, sel_name: [*:0]const u8 }{
+        .{ .secs = 5, .label = "Every 5 sec (test)", .sel_name = "postureInterval5s:" },
+        .{ .secs = 15 * 60, .label = "Every 15 min", .sel_name = "postureInterval15:" },
+        .{ .secs = 30 * 60, .label = "Every 30 min", .sel_name = "postureInterval30:" },
+        .{ .secs = 45 * 60, .label = "Every 45 min", .sel_name = "postureInterval45:" },
+        .{ .secs = 60 * 60, .label = "Every 60 min", .sel_name = "postureInterval60:" },
+    };
+    for (posture_intervals) |pi| {
+        const pi_item = appkit.createMenuItem(pi.label, objc.sel(pi.sel_name), "");
+        appkit.setTarget(pi_item, delegate);
+        if (app_mod.state.posture_interval_secs == pi.secs) {
+            appkit.setMenuItemState(pi_item, true);
+        }
+        appkit.addItem(posture_menu, pi_item);
+    }
+
+    appkit.setSubmenu(posture_item, posture_menu);
+    appkit.addItem(m, posture_item);
+
+    // Blink Reminder submenu
+    const blink_item = appkit.createMenuItem("Blink Reminder", null, "");
+    const blink_menu = appkit.createMenu();
+
+    const blink_toggle = appkit.createMenuItem("Enabled", objc.sel("toggleBlinkReminder:"), "");
+    appkit.setTarget(blink_toggle, delegate);
+    appkit.setMenuItemState(blink_toggle, app_mod.state.blink_reminder_enabled);
+    appkit.addItem(blink_menu, blink_toggle);
+
+    appkit.addItem(blink_menu, appkit.createSeparator());
+
+    const blink_intervals = [_]struct { secs: u32, label: [*:0]const u8, sel_name: [*:0]const u8 }{
+        .{ .secs = 5, .label = "Every 5 sec (test)", .sel_name = "blinkInterval5s:" },
+        .{ .secs = 15 * 60, .label = "Every 15 min", .sel_name = "blinkInterval15:" },
+        .{ .secs = 30 * 60, .label = "Every 30 min", .sel_name = "blinkInterval30:" },
+        .{ .secs = 45 * 60, .label = "Every 45 min", .sel_name = "blinkInterval45:" },
+        .{ .secs = 60 * 60, .label = "Every 60 min", .sel_name = "blinkInterval60:" },
+    };
+    for (blink_intervals) |bi| {
+        const bi_item = appkit.createMenuItem(bi.label, objc.sel(bi.sel_name), "");
+        appkit.setTarget(bi_item, delegate);
+        if (app_mod.state.blink_interval_secs == bi.secs) {
+            appkit.setMenuItemState(bi_item, true);
+        }
+        appkit.addItem(blink_menu, bi_item);
+    }
+
+    appkit.setSubmenu(blink_item, blink_menu);
+    appkit.addItem(m, blink_item);
+
     appkit.addItem(m, appkit.createSeparator());
 
     // Quit

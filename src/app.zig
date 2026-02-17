@@ -3,6 +3,8 @@
 const std = @import("std");
 const objc = @import("macos/objc.zig");
 const overlay = @import("overlay.zig");
+const posture = @import("posture.zig");
+const blink = @import("blink.zig");
 const menubar = @import("menubar.zig");
 const config = @import("config.zig");
 const coreaudio = @import("macos/coreaudio.zig");
@@ -23,6 +25,24 @@ pub const AppState = struct {
     mic_check_interval_secs: u32 = 5,
     mic_check_counter: u32 = 0,
     last_mic_active: bool = false,
+
+    // Posture reminder
+    posture_reminder_enabled: bool = false,
+    posture_interval_secs: u32 = 30 * 60,
+    posture_duration_secs: u32 = 5,
+    seconds_until_posture: i32 = 30 * 60,
+    posture_seconds_remaining: i32 = 0,
+    is_posture_showing: bool = false,
+    posture_tick: u32 = 0,
+
+    // Blink reminder
+    blink_reminder_enabled: bool = false,
+    blink_interval_secs: u32 = 30 * 60,
+    blink_duration_secs: u32 = 5,
+    seconds_until_blink: i32 = 30 * 60,
+    blink_seconds_remaining: i32 = 0,
+    is_blink_showing: bool = false,
+    blink_tick: u32 = 0,
 
     pub fn reset(self: *AppState) void {
         self.seconds_until_break = @intCast(self.work_interval_secs);
@@ -81,6 +101,12 @@ pub fn applyConfig(cfg: config.Config) void {
     state.show_timer_in_menubar = cfg.show_timer_in_menubar;
     state.pause_during_meetings = cfg.pause_during_meetings;
     state.mic_check_interval_secs = cfg.mic_check_interval_secs;
+    state.posture_reminder_enabled = cfg.posture_reminder_enabled;
+    state.posture_interval_secs = cfg.posture_interval_secs;
+    state.seconds_until_posture = @intCast(cfg.posture_interval_secs);
+    state.blink_reminder_enabled = cfg.blink_reminder_enabled;
+    state.blink_interval_secs = cfg.blink_interval_secs;
+    state.seconds_until_blink = @intCast(cfg.blink_interval_secs);
     state.reset();
     config.save(cfg);
     std.log.info("Config applied: {d}s work / {d}s break, timer_in_menubar={}", .{ cfg.work_interval_secs, cfg.break_duration_secs, cfg.show_timer_in_menubar });
@@ -94,6 +120,10 @@ pub fn saveConfig() void {
         .show_timer_in_menubar = state.show_timer_in_menubar,
         .pause_during_meetings = state.pause_during_meetings,
         .mic_check_interval_secs = state.mic_check_interval_secs,
+        .posture_reminder_enabled = state.posture_reminder_enabled,
+        .posture_interval_secs = state.posture_interval_secs,
+        .blink_reminder_enabled = state.blink_reminder_enabled,
+        .blink_interval_secs = state.blink_interval_secs,
     });
 }
 
@@ -105,8 +135,14 @@ pub fn loadConfig() void {
     state.show_timer_in_menubar = cfg.show_timer_in_menubar;
     state.pause_during_meetings = cfg.pause_during_meetings;
     state.mic_check_interval_secs = cfg.mic_check_interval_secs;
+    state.posture_reminder_enabled = cfg.posture_reminder_enabled;
+    state.posture_interval_secs = cfg.posture_interval_secs;
+    state.blink_reminder_enabled = cfg.blink_reminder_enabled;
+    state.blink_interval_secs = cfg.blink_interval_secs;
     state.seconds_until_break = @intCast(cfg.work_interval_secs);
-    std.log.info("Config loaded: {d}s work / {d}s break, timer_in_menubar={}, pause_meetings={}", .{ cfg.work_interval_secs, cfg.break_duration_secs, cfg.show_timer_in_menubar, cfg.pause_during_meetings });
+    state.seconds_until_posture = @intCast(cfg.posture_interval_secs);
+    state.seconds_until_blink = @intCast(cfg.blink_interval_secs);
+    std.log.info("Config loaded: {d}s work / {d}s break, timer_in_menubar={}, pause_meetings={}, posture_enabled={}, posture_interval={d}s, blink_enabled={}, blink_interval={d}s", .{ cfg.work_interval_secs, cfg.break_duration_secs, cfg.show_timer_in_menubar, cfg.pause_during_meetings, cfg.posture_reminder_enabled, cfg.posture_interval_secs, cfg.blink_reminder_enabled, cfg.blink_interval_secs });
 }
 
 // Called every second by the NSTimer
@@ -130,6 +166,17 @@ pub fn tick() void {
     }
 
     if (state.is_paused or state.meeting_paused) {
+        // Dismiss active reminders when paused
+        if (state.is_posture_showing) {
+            posture.hidePostureReminder();
+            state.is_posture_showing = false;
+            state.seconds_until_posture = @intCast(state.posture_interval_secs);
+        }
+        if (state.is_blink_showing) {
+            blink.hideBlinkReminder();
+            state.is_blink_showing = false;
+            state.seconds_until_blink = @intCast(state.blink_interval_secs);
+        }
         menubar.updateMenu();
         return;
     }
@@ -145,6 +192,53 @@ pub fn tick() void {
         state.seconds_until_break -= 1;
         if (state.seconds_until_break <= 0) {
             state.startBreak();
+        }
+    }
+
+    // Blink reminder logic (independent of eye breaks and posture)
+    if (state.blink_reminder_enabled) {
+        if (state.is_blink_showing) {
+            state.blink_seconds_remaining -= 1;
+            state.blink_tick +%= 1;
+            if (state.blink_seconds_remaining <= 0) {
+                blink.hideBlinkReminder();
+                state.is_blink_showing = false;
+                state.seconds_until_blink = @intCast(state.blink_interval_secs);
+            } else {
+                blink.updateBlinkAnimation(state.blink_tick);
+            }
+        } else if (!state.is_on_break) {
+            state.seconds_until_blink -= 1;
+            if (state.seconds_until_blink <= 0) {
+                blink.showBlinkReminder();
+                state.is_blink_showing = true;
+                state.blink_seconds_remaining = @intCast(state.blink_duration_secs);
+                state.blink_tick = 0;
+            }
+        }
+    }
+
+    // Posture reminder logic (independent of eye breaks)
+    if (state.posture_reminder_enabled) {
+        std.log.info("Posture tick: countdown={d}, showing={}", .{ state.seconds_until_posture, state.is_posture_showing });
+        if (state.is_posture_showing) {
+            state.posture_seconds_remaining -= 1;
+            state.posture_tick +%= 1;
+            if (state.posture_seconds_remaining <= 0) {
+                posture.hidePostureReminder();
+                state.is_posture_showing = false;
+                state.seconds_until_posture = @intCast(state.posture_interval_secs);
+            } else {
+                posture.updatePostureAnimation(state.posture_tick);
+            }
+        } else if (!state.is_on_break) {
+            state.seconds_until_posture -= 1;
+            if (state.seconds_until_posture <= 0) {
+                posture.showPostureReminder();
+                state.is_posture_showing = true;
+                state.posture_seconds_remaining = @intCast(state.posture_duration_secs);
+                state.posture_tick = 0;
+            }
         }
     }
 

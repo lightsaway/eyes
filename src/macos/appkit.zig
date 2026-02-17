@@ -17,6 +17,7 @@ pub const NSWindowStyleMaskBorderless: NSUInteger = 0;
 pub const NSWindowStyleMaskTitled: NSUInteger = 1 << 0;
 
 // NSWindow levels
+pub const NSFloatingWindowLevel: c_long = 3;
 pub const NSScreenSaverWindowLevel: c_long = 1000;
 
 // NSWindow backing store types
@@ -240,6 +241,10 @@ pub fn monospacedSystemFont(size: CGFloat, weight: CGFloat) id {
 // NSView
 pub fn setViewFrame(view: id, rect: NSRect) void {
     objc.msgSend_void1(view, objc.sel("setFrame:"), rect);
+}
+
+pub fn setWindowFrame(window: id, rect: NSRect) void {
+    objc.msgSend_void2(window, objc.sel("setFrame:display:"), rect, @as(c_char, 1));
 }
 
 pub fn viewFrame(view: id) NSRect {

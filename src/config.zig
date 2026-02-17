@@ -8,6 +8,10 @@ pub const Config = struct {
     show_timer_in_menubar: bool = true,
     pause_during_meetings: bool = false,
     mic_check_interval_secs: u32 = 5,
+    posture_reminder_enabled: bool = false,
+    posture_interval_secs: u32 = 30 * 60,
+    blink_reminder_enabled: bool = false,
+    blink_interval_secs: u32 = 30 * 60,
 };
 
 const config_dir = ".config/eyes";
@@ -30,7 +34,7 @@ pub fn load() Config {
     const file = std.fs.cwd().openFileZ(path, .{}) catch return Config{};
     defer file.close();
 
-    var buf: [256]u8 = undefined;
+    var buf: [512]u8 = undefined;
     const len = file.readAll(&buf) catch return Config{};
     const data = buf[0..len];
 
@@ -54,8 +58,10 @@ pub fn save(cfg: Config) void {
 
     const show_str: [*:0]const u8 = if (cfg.show_timer_in_menubar) "true" else "false";
     const meetings_str: [*:0]const u8 = if (cfg.pause_during_meetings) "true" else "false";
-    var json_buf: [320]u8 = undefined;
-    const json = std.fmt.bufPrint(&json_buf, "{{\n  \"work_interval_secs\": {d},\n  \"break_duration_secs\": {d},\n  \"show_timer_in_menubar\": {s},\n  \"pause_during_meetings\": {s},\n  \"mic_check_interval_secs\": {d}\n}}\n", .{ cfg.work_interval_secs, cfg.break_duration_secs, show_str, meetings_str, cfg.mic_check_interval_secs }) catch return;
+    const posture_str: [*:0]const u8 = if (cfg.posture_reminder_enabled) "true" else "false";
+    const blink_str: [*:0]const u8 = if (cfg.blink_reminder_enabled) "true" else "false";
+    var json_buf: [768]u8 = undefined;
+    const json = std.fmt.bufPrint(&json_buf, "{{\n  \"work_interval_secs\": {d},\n  \"break_duration_secs\": {d},\n  \"show_timer_in_menubar\": {s},\n  \"pause_during_meetings\": {s},\n  \"mic_check_interval_secs\": {d},\n  \"posture_reminder_enabled\": {s},\n  \"posture_interval_secs\": {d},\n  \"blink_reminder_enabled\": {s},\n  \"blink_interval_secs\": {d}\n}}\n", .{ cfg.work_interval_secs, cfg.break_duration_secs, show_str, meetings_str, cfg.mic_check_interval_secs, posture_str, cfg.posture_interval_secs, blink_str, cfg.blink_interval_secs }) catch return;
     file.writeAll(json) catch {};
 }
 
@@ -67,6 +73,10 @@ fn parse(data: []const u8) Config {
     cfg.show_timer_in_menubar = parseBoolField(data, "show_timer_in_menubar") orelse cfg.show_timer_in_menubar;
     cfg.pause_during_meetings = parseBoolField(data, "pause_during_meetings") orelse cfg.pause_during_meetings;
     cfg.mic_check_interval_secs = parseField(data, "mic_check_interval_secs") orelse cfg.mic_check_interval_secs;
+    cfg.posture_reminder_enabled = parseBoolField(data, "posture_reminder_enabled") orelse cfg.posture_reminder_enabled;
+    cfg.posture_interval_secs = parseField(data, "posture_interval_secs") orelse cfg.posture_interval_secs;
+    cfg.blink_reminder_enabled = parseBoolField(data, "blink_reminder_enabled") orelse cfg.blink_reminder_enabled;
+    cfg.blink_interval_secs = parseField(data, "blink_interval_secs") orelse cfg.blink_interval_secs;
     return cfg;
 }
 
