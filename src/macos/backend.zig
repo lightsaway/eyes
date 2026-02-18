@@ -9,6 +9,8 @@ pub const foundation = @import("foundation.zig");
 pub const cg = @import("coregraphics.zig");
 pub const coreaudio = @import("coreaudio.zig");
 pub const iokit = @import("iokit.zig");
+pub const coreanim = @import("coreanim.zig");
+pub const gifview = @import("gifview.zig");
 
 // UI modules (macOS implementations)
 pub const overlay = @import("../overlay.zig");

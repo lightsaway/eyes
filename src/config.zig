@@ -21,6 +21,9 @@ pub const Config = struct {
     use_notification: bool = false,
     gentle_mode: bool = false,
     strict_mode: bool = false,
+    posture_gif: [64]u8 = .{0} ** 64,
+    blink_gif: [64]u8 = .{0} ** 64,
+    hydration_gif: [64]u8 = .{0} ** 64,
 };
 
 const config_dir = ".config/eyes";
@@ -54,6 +57,13 @@ pub fn load() Config {
     const data = buf[0..len];
 
     return parse(data);
+}
+
+/// Get a null-terminated slice from a fixed-size buffer for formatting.
+fn bufSlice(buf: *const [64]u8) []const u8 {
+    var len: usize = 0;
+    while (len < 64 and buf[len] != 0) : (len += 1) {}
+    return buf[0..len];
 }
 
 /// Save config to ~/.config/eyes/config.json. Creates dir if needed.
@@ -103,7 +113,10 @@ pub fn save(cfg: Config) void {
         \\  "screen_lock_as_break": {s},
         \\  "use_notification": {s},
         \\  "gentle_mode": {s},
-        \\  "strict_mode": {s}
+        \\  "strict_mode": {s},
+        \\  "posture_gif": "{s}",
+        \\  "blink_gif": "{s}",
+        \\  "hydration_gif": "{s}"
         \\}}
         \\
     , .{
@@ -125,6 +138,9 @@ pub fn save(cfg: Config) void {
         boolStr(cfg.use_notification),
         boolStr(cfg.gentle_mode),
         boolStr(cfg.strict_mode),
+        bufSlice(&cfg.posture_gif),
+        bufSlice(&cfg.blink_gif),
+        bufSlice(&cfg.hydration_gif),
     }) catch return;
     file.writeAll(json) catch |err| {
         std.log.warn("config save: write failed: {}", .{err});
@@ -154,6 +170,9 @@ fn parse(data: []const u8) Config {
     cfg.use_notification = parseBoolField(data, "use_notification") orelse cfg.use_notification;
     cfg.gentle_mode = parseBoolField(data, "gentle_mode") orelse cfg.gentle_mode;
     cfg.strict_mode = parseBoolField(data, "strict_mode") orelse cfg.strict_mode;
+    parseStringField(data, "posture_gif", &cfg.posture_gif);
+    parseStringField(data, "blink_gif", &cfg.blink_gif);
+    parseStringField(data, "hydration_gif", &cfg.hydration_gif);
     return cfg;
 }
 
@@ -195,6 +214,34 @@ fn parseField(data: []const u8, key: []const u8) ?u32 {
     if (end == start) return null;
 
     return std.fmt.parseInt(u32, after_colon[start..end], 10) catch null;
+}
+
+fn parseStringField(data: []const u8, key: []const u8, out: []u8) void {
+    const idx = std.mem.indexOf(u8, data, key) orelse return;
+    const after_key = data[idx + key.len ..];
+    const colon = std.mem.indexOfScalar(u8, after_key, ':') orelse return;
+    const after_colon = after_key[colon + 1 ..];
+
+    // Find opening quote
+    const open = std.mem.indexOfScalar(u8, after_colon, '"') orelse return;
+    const after_open = after_colon[open + 1 ..];
+
+    // Find closing quote
+    const close = std.mem.indexOfScalar(u8, after_open, '"') orelse return;
+    const value = after_open[0..close];
+
+    if (value.len >= out.len) return; // too long
+    @memset(out, 0);
+    @memcpy(out[0..value.len], value);
+}
+
+/// Get a null-terminated slice from a GIF filename buffer. Returns null if empty.
+pub fn gifString(buf: *const [64]u8) ?[:0]const u8 {
+    if (buf[0] == 0) return null;
+    // Find the null terminator
+    var len: usize = 0;
+    while (len < 64 and buf[len] != 0) : (len += 1) {}
+    return buf[0..len :0];
 }
 
 // ---- Tests ----

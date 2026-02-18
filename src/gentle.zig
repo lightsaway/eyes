@@ -1,4 +1,4 @@
-// Gentle mode — translucent banner at top of screen instead of fullscreen overlay.
+// Gentle mode — translucent banner that slides down from top with spring overshoot.
 
 const std = @import("std");
 const objc = @import("macos/objc.zig");
@@ -23,15 +23,21 @@ const NSVisualEffectMaterialHUDWindow: c_long = 13;
 const NSVisualEffectBlendingModeBehindWindow: c_long = 0;
 const NSVisualEffectStateActive: c_long = 1;
 
-// Fade state
-const FadeOnComplete = enum { none, hide_after };
+// Slide animation state
+const SlidePhase = enum { sliding_in, visible, sliding_out, hidden };
+var slide_phase: SlidePhase = .hidden;
+var slide_progress: f32 = 0.0;
+var screen_height: CGFloat = 0.0;
+var screen_x: CGFloat = 0.0;
+var target_y: CGFloat = 0.0; // computed from screen height
+
+// Fade/slide state
 var fade_timer: objc.id = null;
 var fade_current_alpha: CGFloat = 0.0;
-var fade_target_alpha: CGFloat = 0.0;
-var fade_on_complete: FadeOnComplete = .none;
-const fade_step: CGFloat = 0.05;
 const fade_interval: f64 = 0.033;
 const max_visible_alpha: CGFloat = 0.95;
+const slide_in_duration: f32 = 0.5;
+const slide_out_duration: f32 = 0.3;
 
 const messages = [_][*:0]const u8{
     "Look at something 20 feet away",
@@ -71,30 +77,84 @@ fn destroyWindow() void {
     }
 }
 
+/// Spring-like ease for slide-in: overshoots target by 8px then settles.
+/// Phase 1 (0..0.7): ease-out to target - 8px (overshoot past target)
+/// Phase 2 (0.7..1.0): ease-in-out back to target
+fn springEase(p: f32) f32 {
+    if (p < 0.7) {
+        // Normalized progress within phase 1
+        const t = p / 0.7;
+        const inv = 1.0 - t;
+        const ease = 1.0 - inv * inv; // ease-out
+        // Map to overshoot: goes from 0 to 1.0 + overshoot_fraction
+        return ease * 1.08; // 8% overshoot (8px at ~100px travel)
+    } else {
+        // Phase 2: ease back from 1.08 to 1.0
+        const t = (p - 0.7) / 0.3;
+        const ease = t * t * (3.0 - 2.0 * t); // smoothstep
+        return 1.08 - 0.08 * ease;
+    }
+}
+
+fn easeIn(p: f32) f32 {
+    return p * p;
+}
+
 pub fn fadeTick() void {
-    if (fade_current_alpha < fade_target_alpha) {
-        fade_current_alpha = @min(fade_current_alpha + fade_step, fade_target_alpha);
-    } else if (fade_current_alpha > fade_target_alpha) {
-        fade_current_alpha = @max(fade_current_alpha - fade_step, fade_target_alpha);
-    }
+    const dt: f32 = @floatCast(fade_interval);
 
+    switch (slide_phase) {
+        .sliding_in => {
+            slide_progress += dt / slide_in_duration;
+            if (slide_progress >= 1.0) {
+                slide_progress = 1.0;
+                slide_phase = .visible;
+            }
+            const t = springEase(slide_progress);
+            // Start above screen, slide down to target_y
+            const start_y = screen_height + 10.0;
+            const travel = start_y - target_y;
+            const y = start_y - travel * @as(CGFloat, @floatCast(t));
+            fade_current_alpha = max_visible_alpha * @as(CGFloat, @floatCast(@min(slide_progress / 0.3, 1.0)));
+            applyPosition(y, fade_current_alpha);
+        },
+        .visible => {
+            cancelFadeTimer();
+        },
+        .sliding_out => {
+            slide_progress += dt / slide_out_duration;
+            if (slide_progress >= 1.0) {
+                slide_progress = 1.0;
+                slide_phase = .hidden;
+                cancelFadeTimer();
+                destroyWindow();
+                return;
+            }
+            const t = easeIn(slide_progress);
+            const end_y = screen_height + 10.0;
+            const y = target_y + (end_y - target_y) * @as(CGFloat, @floatCast(t));
+            fade_current_alpha = max_visible_alpha * (1.0 - @as(CGFloat, @floatCast(t)));
+            applyPosition(y, fade_current_alpha);
+        },
+        .hidden => {
+            cancelFadeTimer();
+        },
+    }
+}
+
+fn applyPosition(y: CGFloat, alpha: CGFloat) void {
     if (banner_window != null) {
-        appkit.setAlphaValue(banner_window, fade_current_alpha);
-    }
-
-    if (fade_current_alpha == fade_target_alpha) {
-        cancelFadeTimer();
-        if (fade_on_complete == .hide_after) {
-            fade_on_complete = .none;
-            destroyWindow();
-        }
+        appkit.setWindowFrame(banner_window, NSRect{
+            .origin = NSPoint{ .x = screen_x, .y = y },
+            .size = NSSize{ .width = banner_width, .height = banner_height },
+        });
+        appkit.setAlphaValue(banner_window, alpha);
     }
 }
 
 pub fn showGentleBanner(state: *app_mod.AppState) void {
-    if (fade_on_complete == .hide_after) {
+    if (slide_phase == .sliding_out) {
         cancelFadeTimer();
-        fade_on_complete = .none;
         destroyWindow();
     }
 
@@ -104,12 +164,14 @@ pub fn showGentleBanner(state: *app_mod.AppState) void {
 
     const screen = appkit.mainScreen();
     const screen_rect = appkit.screenFrame(screen);
-    const x = (screen_rect.size.width - banner_width) / 2.0;
-    const y = screen_rect.size.height - banner_height - 40.0; // near top
+    screen_x = (screen_rect.size.width - banner_width) / 2.0;
+    screen_height = screen_rect.size.height;
+    target_y = screen_height - banner_height - 40.0;
 
+    // Start above screen
     const window = appkit.createWindow(
         NSRect{
-            .origin = NSPoint{ .x = x, .y = y },
+            .origin = NSPoint{ .x = screen_x, .y = screen_height + 10.0 },
             .size = NSSize{ .width = banner_width, .height = banner_height },
         },
         appkit.NSWindowStyleMaskBorderless,
@@ -184,10 +246,10 @@ pub fn showGentleBanner(state: *app_mod.AppState) void {
     appkit.setAccessibilityLabel(window, "Break reminder banner");
     appkit.postAccessibilityAnnouncement("Break time. Look at something 20 feet away.");
 
-    // Start fade in
+    // Start slide-in with spring
+    slide_phase = .sliding_in;
+    slide_progress = 0.0;
     fade_current_alpha = 0.0;
-    fade_target_alpha = max_visible_alpha;
-    fade_on_complete = .none;
     startFadeTimer();
 
     appkit.playSystemSound("Tink");
@@ -198,8 +260,8 @@ pub fn hideGentleBanner() void {
 
     std.log.info("Gentle: hiding banner", .{});
 
-    fade_target_alpha = 0.0;
-    fade_on_complete = .hide_after;
+    slide_phase = .sliding_out;
+    slide_progress = 0.0;
     startFadeTimer();
 }
 

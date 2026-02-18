@@ -1,9 +1,12 @@
-// Posture reminder — modern floating pill at bottom-center with rising arrow and fade animations.
+// Posture reminder — floating pill with slide-up entrance, floating bob, and slide-out exit.
 
 const std = @import("std");
 const objc = @import("macos/objc.zig");
 const appkit = @import("macos/appkit.zig");
 const foundation = @import("macos/foundation.zig");
+const config = @import("config.zig");
+const app_mod = @import("app.zig");
+const gifview = @import("macos/gifview.zig");
 
 const CGFloat = objc.CGFloat;
 const NSRect = objc.NSRect;
@@ -12,24 +15,30 @@ const NSSize = objc.NSSize;
 
 var posture_window: objc.id = null;
 var arrow_label: objc.id = null;
+var gif_view: objc.id = null;
 
 const window_width: CGFloat = 160.0;
 const window_height: CGFloat = 120.0;
+const target_y: CGFloat = 60.0;
 
 // NSVisualEffectView constants
 const NSVisualEffectMaterialHUDWindow: c_long = 13;
 const NSVisualEffectBlendingModeBehindWindow: c_long = 0;
 const NSVisualEffectStateActive: c_long = 1;
 
-// Fade state
-const FadeOnComplete = enum { none, hide_after };
+// Slide animation state
+const SlidePhase = enum { sliding_in, visible, sliding_out, hidden };
+var slide_phase: SlidePhase = .hidden;
+var slide_progress: f32 = 0.0;
+var screen_x: CGFloat = 0.0; // cached x position
+
+// Fade/slide state
 var fade_timer: objc.id = null;
 var fade_current_alpha: CGFloat = 0.0;
-var fade_target_alpha: CGFloat = 0.0;
-var fade_on_complete: FadeOnComplete = .none;
-const fade_step: CGFloat = 0.05;
 const fade_interval: f64 = 0.033;
 const max_visible_alpha: CGFloat = 0.95;
+const slide_in_duration: f32 = 0.4; // seconds
+const slide_out_duration: f32 = 0.3;
 
 fn cancelFadeTimer() void {
     if (fade_timer != null) {
@@ -45,27 +54,71 @@ fn startFadeTimer() void {
     fade_timer = foundation.scheduledTimer(fade_interval, delegate, objc.sel("postureFadeTick:"), true);
 }
 
+/// Ease-out: t = 1 - (1-p)^2
+fn easeOut(p: f32) f32 {
+    const inv = 1.0 - p;
+    return 1.0 - inv * inv;
+}
+
+/// Ease-in: t = p^2
+fn easeIn(p: f32) f32 {
+    return p * p;
+}
+
 pub fn fadeTick() void {
-    if (fade_current_alpha < fade_target_alpha) {
-        fade_current_alpha = @min(fade_current_alpha + fade_step, fade_target_alpha);
-    } else if (fade_current_alpha > fade_target_alpha) {
-        fade_current_alpha = @max(fade_current_alpha - fade_step, fade_target_alpha);
-    }
+    const dt: f32 = @floatCast(fade_interval);
 
+    switch (slide_phase) {
+        .sliding_in => {
+            slide_progress += dt / slide_in_duration;
+            if (slide_progress >= 1.0) {
+                slide_progress = 1.0;
+                slide_phase = .visible;
+            }
+            const t = easeOut(slide_progress);
+            const y = -window_height + (target_y + window_height) * @as(CGFloat, @floatCast(t));
+            fade_current_alpha = max_visible_alpha * @as(CGFloat, @floatCast(t));
+            applyPosition(y, fade_current_alpha);
+        },
+        .visible => {
+            // Nothing to animate in the 30fps timer; bob is done in updateAnimation
+            cancelFadeTimer();
+        },
+        .sliding_out => {
+            slide_progress += dt / slide_out_duration;
+            if (slide_progress >= 1.0) {
+                slide_progress = 1.0;
+                slide_phase = .hidden;
+                cancelFadeTimer();
+                destroyWindow();
+                return;
+            }
+            const t = easeIn(slide_progress);
+            const y = target_y - (target_y + window_height) * @as(CGFloat, @floatCast(t));
+            fade_current_alpha = max_visible_alpha * (1.0 - @as(CGFloat, @floatCast(t)));
+            applyPosition(y, fade_current_alpha);
+        },
+        .hidden => {
+            cancelFadeTimer();
+        },
+    }
+}
+
+fn applyPosition(y: CGFloat, alpha: CGFloat) void {
     if (posture_window != null) {
-        appkit.setAlphaValue(posture_window, fade_current_alpha);
-    }
-
-    if (fade_current_alpha == fade_target_alpha) {
-        cancelFadeTimer();
-        if (fade_on_complete == .hide_after) {
-            fade_on_complete = .none;
-            destroyWindow();
-        }
+        appkit.setWindowFrame(posture_window, NSRect{
+            .origin = NSPoint{ .x = screen_x, .y = y },
+            .size = NSSize{ .width = window_width, .height = window_height },
+        });
+        appkit.setAlphaValue(posture_window, alpha);
     }
 }
 
 fn destroyWindow() void {
+    if (gif_view != null) {
+        gifview.destroy(gif_view);
+        gif_view = null;
+    }
     if (posture_window != null) {
         appkit.orderOut(posture_window);
         objc.release(posture_window);
@@ -75,9 +128,8 @@ fn destroyWindow() void {
 }
 
 pub fn showPostureReminder() void {
-    if (fade_on_complete == .hide_after) {
+    if (slide_phase == .sliding_out) {
         cancelFadeTimer();
-        fade_on_complete = .none;
         destroyWindow();
     }
 
@@ -87,11 +139,12 @@ pub fn showPostureReminder() void {
 
     const screen = appkit.mainScreen();
     const screen_rect = appkit.screenFrame(screen);
-    const x = (screen_rect.size.width - window_width) / 2.0;
+    screen_x = (screen_rect.size.width - window_width) / 2.0;
 
+    // Start below screen edge
     const window = appkit.createWindow(
         NSRect{
-            .origin = NSPoint{ .x = x, .y = 60.0 },
+            .origin = NSPoint{ .x = screen_x, .y = -window_height },
             .size = NSSize{ .width = window_width, .height = window_height },
         },
         appkit.NSWindowStyleMaskBorderless,
@@ -129,17 +182,38 @@ pub fn showPostureReminder() void {
     }
     appkit.addSubview(content, effect_view);
 
-    // Arrow label — starts low, will rise
-    const label = appkit.createLabel("\xe2\x86\x91"); // "↑"
-    appkit.setFont(label, appkit.systemFont(52.0));
-    appkit.setTextColor(label, appkit.whiteColor());
-    appkit.setAlignment(label, appkit.NSTextAlignmentCenter);
-    appkit.setViewFrame(label, NSRect{
+    // Emoji/GIF area
+    const emoji_frame = NSRect{
         .origin = NSPoint{ .x = 0.0, .y = 8.0 },
         .size = NSSize{ .width = window_width, .height = 64.0 },
-    });
-    appkit.addSubview(effect_view, label);
-    arrow_label = label;
+    };
+
+    if (config.gifString(&app_mod.state.posture_gif)) |gif_name| {
+        // Try to load GIF from ~/.config/eyes/{gif_name}
+        const home = std.posix.getenv("HOME") orelse "";
+        var path_buf: [512]u8 = undefined;
+        const slice = std.fmt.bufPrint(path_buf[0 .. path_buf.len - 1], "{s}/.config/eyes/{s}", .{ home, gif_name }) catch null;
+        if (slice) |s| {
+            path_buf[s.len] = 0;
+            const path: [:0]const u8 = path_buf[0..s.len :0];
+            const gv = gifview.create(path, emoji_frame);
+            if (gv != null) {
+                appkit.addSubview(effect_view, gv);
+                gif_view = gv;
+            }
+        }
+    }
+
+    if (gif_view == null) {
+        // Fallback: arrow label
+        const label = appkit.createLabel("\xe2\x86\x91"); // "↑"
+        appkit.setFont(label, appkit.systemFont(52.0));
+        appkit.setTextColor(label, appkit.whiteColor());
+        appkit.setAlignment(label, appkit.NSTextAlignmentCenter);
+        appkit.setViewFrame(label, emoji_frame);
+        appkit.addSubview(effect_view, label);
+        arrow_label = label;
+    }
 
     // Small hint text
     const dark = appkit.isDarkMode();
@@ -162,10 +236,10 @@ pub fn showPostureReminder() void {
     appkit.setAccessibilityLabel(window, "Posture reminder");
     appkit.postAccessibilityAnnouncement("Straighten up. Check your posture.");
 
-    // Start fade in
+    // Start slide-in animation
+    slide_phase = .sliding_in;
+    slide_progress = 0.0;
     fade_current_alpha = 0.0;
-    fade_target_alpha = max_visible_alpha;
-    fade_on_complete = .none;
     startFadeTimer();
 
     appkit.playSystemSound("Pop");
@@ -176,25 +250,28 @@ pub fn hidePostureReminder() void {
 
     std.log.info("Posture: hiding reminder", .{});
 
-    // Start fade out
-    fade_target_alpha = 0.0;
-    fade_on_complete = .hide_after;
+    // Start slide-out
+    slide_phase = .sliding_out;
+    slide_progress = 0.0;
     startFadeTimer();
 }
 
-pub fn updatePostureAnimation(tick: u32) void {
-    const label: objc.id = arrow_label orelse return;
+pub fn updatePostureAnimation(tick_val: u32) void {
+    if (posture_window == null or slide_phase != .visible) return;
 
-    // Arrow rises gradually: starts at y=8, moves up ~6px per tick
-    const clamped: u64 = @min(tick, 5);
+    // Floating bob: subtle 3px vertical oscillation
+    const t: f32 = @floatFromInt(tick_val);
+    const bob_offset: CGFloat = @floatCast(@sin(t * 0.5) * 3.0);
+    applyPosition(target_y + bob_offset, max_visible_alpha);
+
+    // Arrow rises gradually
+    const label: objc.id = arrow_label orelse return;
+    const clamped: u64 = @min(tick_val, 5);
     const rise: CGFloat = @floatFromInt(clamped * 6);
     appkit.setViewFrame(label, NSRect{
         .origin = NSPoint{ .x = 0.0, .y = 8.0 + rise },
         .size = NSSize{ .width = window_width, .height = 64.0 },
     });
-
-    // Note: breathing alpha is now handled by the fade system,
-    // so we don't manually set alpha here during the visible phase
 }
 
 pub fn isVisible() bool {

@@ -81,6 +81,11 @@ pub const AppState = struct {
     // Strict mode
     strict_mode: bool = false,
 
+    // GIF filenames (null-terminated, empty = disabled)
+    posture_gif: [64]u8 = .{0} ** 64,
+    blink_gif: [64]u8 = .{0} ** 64,
+    hydration_gif: [64]u8 = .{0} ** 64,
+
     // Statistics (daily, in-memory)
     breaks_taken: u32 = 0,
     breaks_skipped: u32 = 0,
@@ -193,6 +198,9 @@ pub fn applyConfig(cfg: config.Config) void {
     state.use_notification = cfg.use_notification;
     state.gentle_mode = cfg.gentle_mode;
     state.strict_mode = cfg.strict_mode;
+    state.posture_gif = cfg.posture_gif;
+    state.blink_gif = cfg.blink_gif;
+    state.hydration_gif = cfg.hydration_gif;
     state.reset();
     config.save(cfg);
     std.log.info("Config applied: {d}s work / {d}s break, timer_in_menubar={}", .{ cfg.work_interval_secs, cfg.break_duration_secs, cfg.show_timer_in_menubar });
@@ -219,6 +227,9 @@ pub fn saveConfig() void {
         .use_notification = state.use_notification,
         .gentle_mode = state.gentle_mode,
         .strict_mode = state.strict_mode,
+        .posture_gif = state.posture_gif,
+        .blink_gif = state.blink_gif,
+        .hydration_gif = state.hydration_gif,
     });
 }
 
@@ -243,6 +254,9 @@ pub fn loadConfig() void {
     state.use_notification = cfg.use_notification;
     state.gentle_mode = cfg.gentle_mode;
     state.strict_mode = cfg.strict_mode;
+    state.posture_gif = cfg.posture_gif;
+    state.blink_gif = cfg.blink_gif;
+    state.hydration_gif = cfg.hydration_gif;
     state.seconds_until_break = @intCast(cfg.work_interval_secs);
     state.seconds_until_posture = @intCast(cfg.posture_interval_secs);
     state.seconds_until_blink = @intCast(cfg.blink_interval_secs);
