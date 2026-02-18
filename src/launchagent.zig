@@ -31,30 +31,48 @@ pub fn setEnabled(enabled: bool) void {
     if (enabled) {
         // Get the path to the current binary
         var exe_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const exe_path = std.fs.selfExePath(&exe_buf) catch return;
+        const exe_path = std.fs.selfExePath(&exe_buf) catch |err| {
+            std.log.warn("launchagent: selfExePath failed: {}", .{err});
+            return;
+        };
 
         // Create ~/Library/LaunchAgents/ if needed
         var dir_buf: [512]u8 = undefined;
         const dir_path = fmtPathZ(&dir_buf, "{s}/{s}", .{ home, plist_dir }) orelse return;
-        std.fs.cwd().makePath(dir_path) catch return;
+        std.fs.cwd().makePath(dir_path) catch |err| {
+            std.log.warn("launchagent: makePath failed: {}", .{err});
+            return;
+        };
 
         // Write the plist
         var path_buf: [512]u8 = undefined;
         const file_path = fmtPathZ(&path_buf, "{s}/{s}/{s}", .{ home, plist_dir, plist_file }) orelse return;
 
         var plist_buf: [2048]u8 = undefined;
-        const plist_content = std.fmt.bufPrint(&plist_buf, plist_template, .{exe_path}) catch return;
+        const plist_content = std.fmt.bufPrint(&plist_buf, plist_template, .{exe_path}) catch |err| {
+            std.log.warn("launchagent: bufPrint failed: {}", .{err});
+            return;
+        };
 
-        const file = std.fs.cwd().createFileZ(file_path, .{}) catch return;
+        const file = std.fs.cwd().createFileZ(file_path, .{}) catch |err| {
+            std.log.warn("launchagent: createFile failed: {}", .{err});
+            return;
+        };
         defer file.close();
 
-        file.writeAll(plist_content) catch return;
+        file.writeAll(plist_content) catch |err| {
+            std.log.warn("launchagent: write failed: {}", .{err});
+            return;
+        };
     } else {
         // Remove the plist
         var path_buf: [512]u8 = undefined;
         const file_path = fmtPathZ(&path_buf, "{s}/{s}/{s}", .{ home, plist_dir, plist_file }) orelse return;
 
-        std.fs.cwd().deleteFileZ(file_path) catch return;
+        std.fs.cwd().deleteFileZ(file_path) catch |err| {
+            std.log.warn("launchagent: deleteFile failed: {}", .{err});
+            return;
+        };
     }
 }
 

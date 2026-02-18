@@ -1,8 +1,9 @@
-// Posture reminder — modern floating pill at bottom-center with rising arrow.
+// Posture reminder — modern floating pill at bottom-center with rising arrow and fade animations.
 
 const std = @import("std");
 const objc = @import("macos/objc.zig");
 const appkit = @import("macos/appkit.zig");
+const foundation = @import("macos/foundation.zig");
 
 const CGFloat = objc.CGFloat;
 const NSRect = objc.NSRect;
@@ -20,7 +21,66 @@ const NSVisualEffectMaterialHUDWindow: c_long = 13;
 const NSVisualEffectBlendingModeBehindWindow: c_long = 0;
 const NSVisualEffectStateActive: c_long = 1;
 
+// Fade state
+const FadeOnComplete = enum { none, hide_after };
+var fade_timer: objc.id = null;
+var fade_current_alpha: CGFloat = 0.0;
+var fade_target_alpha: CGFloat = 0.0;
+var fade_on_complete: FadeOnComplete = .none;
+const fade_step: CGFloat = 0.05;
+const fade_interval: f64 = 0.033;
+const max_visible_alpha: CGFloat = 0.95;
+
+fn cancelFadeTimer() void {
+    if (fade_timer != null) {
+        foundation.invalidateTimer(fade_timer);
+        fade_timer = null;
+    }
+}
+
+fn startFadeTimer() void {
+    cancelFadeTimer();
+    const NSApp = appkit.sharedApplication();
+    const delegate = objc.msgSend_id(NSApp, objc.sel("delegate"));
+    fade_timer = foundation.scheduledTimer(fade_interval, delegate, objc.sel("postureFadeTick:"), true);
+}
+
+pub fn fadeTick() void {
+    if (fade_current_alpha < fade_target_alpha) {
+        fade_current_alpha = @min(fade_current_alpha + fade_step, fade_target_alpha);
+    } else if (fade_current_alpha > fade_target_alpha) {
+        fade_current_alpha = @max(fade_current_alpha - fade_step, fade_target_alpha);
+    }
+
+    if (posture_window != null) {
+        appkit.setAlphaValue(posture_window, fade_current_alpha);
+    }
+
+    if (fade_current_alpha == fade_target_alpha) {
+        cancelFadeTimer();
+        if (fade_on_complete == .hide_after) {
+            fade_on_complete = .none;
+            destroyWindow();
+        }
+    }
+}
+
+fn destroyWindow() void {
+    if (posture_window != null) {
+        appkit.orderOut(posture_window);
+        objc.release(posture_window);
+        posture_window = null;
+        arrow_label = null;
+    }
+}
+
 pub fn showPostureReminder() void {
+    if (fade_on_complete == .hide_after) {
+        cancelFadeTimer();
+        fade_on_complete = .none;
+        destroyWindow();
+    }
+
     if (posture_window != null) return;
 
     std.log.info("Posture: showing reminder", .{});
@@ -42,7 +102,7 @@ pub fn showPostureReminder() void {
     appkit.setWindowLevel(window, appkit.NSFloatingWindowLevel);
     appkit.setWindowBackgroundColor(window, appkit.clearColor());
     appkit.setOpaque(window, false);
-    appkit.setAlphaValue(window, 0.0); // start invisible, fade in
+    appkit.setAlphaValue(window, 0.0);
     appkit.setWindowCollectionBehavior(window, appkit.NSWindowCollectionBehaviorCanJoinAllSpaces | appkit.NSWindowCollectionBehaviorStationary);
     appkit.setIgnoresMouseEvents(window, true);
 
@@ -82,9 +142,11 @@ pub fn showPostureReminder() void {
     arrow_label = label;
 
     // Small hint text
+    const dark = appkit.isDarkMode();
+    const hint_color = if (dark) appkit.colorWithRGBA(1.0, 1.0, 1.0, 0.6) else appkit.colorWithRGBA(0.0, 0.0, 0.0, 0.6);
     const hint = appkit.createLabel("straighten up");
     appkit.setFont(hint, appkit.systemFont(11.0));
-    appkit.setTextColor(hint, appkit.colorWithRGBA(1.0, 1.0, 1.0, 0.6));
+    appkit.setTextColor(hint, hint_color);
     appkit.setAlignment(hint, appkit.NSTextAlignmentCenter);
     appkit.setViewFrame(hint, NSRect{
         .origin = NSPoint{ .x = 0.0, .y = 76.0 },
@@ -95,25 +157,33 @@ pub fn showPostureReminder() void {
     appkit.orderFront(window);
     posture_window = window;
 
-    // Fade in immediately
-    appkit.setAlphaValue(window, 0.95);
+    // Accessibility
+    appkit.setAccessibilityRole(window, "AXWindow");
+    appkit.setAccessibilityLabel(window, "Posture reminder");
+    appkit.postAccessibilityAnnouncement("Straighten up. Check your posture.");
+
+    // Start fade in
+    fade_current_alpha = 0.0;
+    fade_target_alpha = max_visible_alpha;
+    fade_on_complete = .none;
+    startFadeTimer();
 
     appkit.playSystemSound("Pop");
 }
 
 pub fn hidePostureReminder() void {
-    if (posture_window != null) {
-        std.log.info("Posture: hiding reminder", .{});
-        appkit.orderOut(posture_window);
-        objc.release(posture_window);
-        posture_window = null;
-        arrow_label = null;
-    }
+    if (posture_window == null) return;
+
+    std.log.info("Posture: hiding reminder", .{});
+
+    // Start fade out
+    fade_target_alpha = 0.0;
+    fade_on_complete = .hide_after;
+    startFadeTimer();
 }
 
 pub fn updatePostureAnimation(tick: u32) void {
     const label: objc.id = arrow_label orelse return;
-    const win: objc.id = posture_window orelse return;
 
     // Arrow rises gradually: starts at y=8, moves up ~6px per tick
     const clamped: u64 = @min(tick, 5);
@@ -123,11 +193,8 @@ pub fn updatePostureAnimation(tick: u32) void {
         .size = NSSize{ .width = window_width, .height = 64.0 },
     });
 
-    // Breathing alpha: 0.95 → 0.75 → 0.95 ...
-    const alpha: CGFloat = if (tick % 2 == 0) 0.95 else 0.75;
-    appkit.setAlphaValue(win, alpha);
-
-    std.log.info("Posture: animation tick={d}, rise={d}, alpha={d}", .{ tick, @as(i32, @intFromFloat(rise)), @as(i32, @intFromFloat(alpha * 100)) });
+    // Note: breathing alpha is now handled by the fade system,
+    // so we don't manually set alpha here during the visible phase
 }
 
 pub fn isVisible() bool {

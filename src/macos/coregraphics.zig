@@ -44,6 +44,51 @@ pub const CGEventTapOptions = enum(u32) {
     listenOnly = 1,
 };
 
+// CGEvent types and constants
+pub const CGEventType = u32;
+pub const kCGEventKeyDown: CGEventType = 10;
+pub const kCGEventKeyUp: CGEventType = 11;
+pub const kCGEventLeftMouseDown: CGEventType = 1;
+pub const kCGEventLeftMouseUp: CGEventType = 2;
+pub const kCGEventRightMouseDown: CGEventType = 3;
+pub const kCGEventRightMouseUp: CGEventType = 4;
+pub const kCGEventScrollWheel: CGEventType = 22;
+
+pub const CGEventFlags = u64;
+pub const kCGEventFlagMaskCommand: CGEventFlags = 1 << 20;
+pub const kCGEventFlagMaskShift: CGEventFlags = 1 << 17;
+
+pub const kCGKeyboardEventKeycode: u32 = 9;
+
+// CGEventTap callback type: (proxy, type, event, userInfo) -> event
+pub const CGEventTapCallBack = *const fn (?*anyopaque, CGEventType, ?*anyopaque, ?*anyopaque) callconv(.c) ?*anyopaque;
+
+pub extern "CoreGraphics" fn CGEventTapCreate(
+    tap: u32, // CGEventTapLocation
+    place: u32, // CGEventTapPlacement
+    options: u32, // CGEventTapOptions
+    eventsOfInterest: u64, // CGEventMask
+    callback: CGEventTapCallBack,
+    userInfo: ?*anyopaque,
+) ?*anyopaque; // CFMachPortRef
+
+pub extern "CoreGraphics" fn CGEventTapEnable(tap: ?*anyopaque, enable: bool) void;
+
+pub extern "CoreGraphics" fn CGEventGetFlags(event: ?*anyopaque) CGEventFlags;
+
+pub extern "CoreGraphics" fn CGEventGetIntegerValueField(event: ?*anyopaque, field: u32) i64;
+
+// CoreFoundation run loop helpers
+pub extern "CoreFoundation" fn CFMachPortCreateRunLoopSource(allocator: ?*anyopaque, port: ?*anyopaque, order: c_long) ?*anyopaque;
+pub extern "CoreFoundation" fn CFRunLoopGetCurrent() ?*anyopaque;
+pub extern "CoreFoundation" fn CFRunLoopAddSource(rl: ?*anyopaque, source: ?*anyopaque, mode: ?*anyopaque) void;
+pub extern "CoreFoundation" fn CFMachPortInvalidate(port: ?*anyopaque) void;
+pub extern "CoreFoundation" fn CFRunLoopSourceInvalidate(source: ?*anyopaque) void;
+pub extern "CoreFoundation" fn CFRelease(cf: ?*anyopaque) void;
+
+// kCFRunLoopCommonModes — this is an extern global CFStringRef
+pub extern "CoreFoundation" var kCFRunLoopCommonModes: ?*anyopaque;
+
 // CGWindowList constants
 pub const kCGWindowListOptionOnScreenOnly: u32 = 1 << 0;
 pub const kCGWindowListExcludeDesktopElements: u32 = 1 << 4;

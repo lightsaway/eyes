@@ -1,4 +1,4 @@
-// Blink reminder — floating pill at bottom-center with blinking eye animation and fade.
+// Hydration reminder — floating pill at bottom-center with water droplet animation and fade.
 
 const std = @import("std");
 const objc = @import("macos/objc.zig");
@@ -10,8 +10,8 @@ const NSRect = objc.NSRect;
 const NSPoint = objc.NSPoint;
 const NSSize = objc.NSSize;
 
-var blink_window: objc.id = null;
-var eye_label: objc.id = null;
+var hydration_window: objc.id = null;
+var water_label: objc.id = null;
 
 const window_width: CGFloat = 120.0;
 const window_height: CGFloat = 80.0;
@@ -42,7 +42,7 @@ fn startFadeTimer() void {
     cancelFadeTimer();
     const NSApp = appkit.sharedApplication();
     const delegate = objc.msgSend_id(NSApp, objc.sel("delegate"));
-    fade_timer = foundation.scheduledTimer(fade_interval, delegate, objc.sel("blinkFadeTick:"), true);
+    fade_timer = foundation.scheduledTimer(fade_interval, delegate, objc.sel("hydrationFadeTick:"), true);
 }
 
 pub fn fadeTick() void {
@@ -52,8 +52,8 @@ pub fn fadeTick() void {
         fade_current_alpha = @max(fade_current_alpha - fade_step, fade_target_alpha);
     }
 
-    if (blink_window != null) {
-        appkit.setAlphaValue(blink_window, fade_current_alpha);
+    if (hydration_window != null) {
+        appkit.setAlphaValue(hydration_window, fade_current_alpha);
     }
 
     if (fade_current_alpha == fade_target_alpha) {
@@ -66,24 +66,24 @@ pub fn fadeTick() void {
 }
 
 fn destroyWindow() void {
-    if (blink_window != null) {
-        appkit.orderOut(blink_window);
-        objc.release(blink_window);
-        blink_window = null;
-        eye_label = null;
+    if (hydration_window != null) {
+        appkit.orderOut(hydration_window);
+        objc.release(hydration_window);
+        hydration_window = null;
+        water_label = null;
     }
 }
 
-pub fn showBlinkReminder() void {
+pub fn showHydrationReminder() void {
     if (fade_on_complete == .hide_after) {
         cancelFadeTimer();
         fade_on_complete = .none;
         destroyWindow();
     }
 
-    if (blink_window != null) return;
+    if (hydration_window != null) return;
 
-    std.log.info("Blink: showing reminder", .{});
+    std.log.info("Hydration: showing reminder", .{});
 
     const screen = appkit.mainScreen();
     const screen_rect = appkit.screenFrame(screen);
@@ -129,8 +129,8 @@ pub fn showBlinkReminder() void {
     }
     appkit.addSubview(content, effect_view);
 
-    // Eye label — alternates between open and closed
-    const label = appkit.createLabel("\xf0\x9f\x91\x81"); // "👁"
+    // Water label — alternates between droplet and faucet
+    const label = appkit.createLabel("\xf0\x9f\x92\xa7"); // "💧"
     appkit.setFont(label, appkit.systemFont(36.0));
     appkit.setTextColor(label, appkit.whiteColor());
     appkit.setAlignment(label, appkit.NSTextAlignmentCenter);
@@ -139,12 +139,12 @@ pub fn showBlinkReminder() void {
         .size = NSSize{ .width = window_width, .height = 44.0 },
     });
     appkit.addSubview(effect_view, label);
-    eye_label = label;
+    water_label = label;
 
     // Small hint text
     const dark = appkit.isDarkMode();
     const hint_color = if (dark) appkit.colorWithRGBA(1.0, 1.0, 1.0, 0.6) else appkit.colorWithRGBA(0.0, 0.0, 0.0, 0.6);
-    const hint = appkit.createLabel("blink");
+    const hint = appkit.createLabel("drink water");
     appkit.setFont(hint, appkit.systemFont(11.0));
     appkit.setTextColor(hint, hint_color);
     appkit.setAlignment(hint, appkit.NSTextAlignmentCenter);
@@ -155,12 +155,12 @@ pub fn showBlinkReminder() void {
     appkit.addSubview(effect_view, hint);
 
     appkit.orderFront(window);
-    blink_window = window;
+    hydration_window = window;
 
     // Accessibility
     appkit.setAccessibilityRole(window, "AXWindow");
-    appkit.setAccessibilityLabel(window, "Blink reminder");
-    appkit.postAccessibilityAnnouncement("Blink. Remember to blink your eyes.");
+    appkit.setAccessibilityLabel(window, "Hydration reminder");
+    appkit.postAccessibilityAnnouncement("Drink water. Stay hydrated.");
 
     // Start fade in
     fade_current_alpha = 0.0;
@@ -171,10 +171,10 @@ pub fn showBlinkReminder() void {
     appkit.playSystemSound("Pop");
 }
 
-pub fn hideBlinkReminder() void {
-    if (blink_window == null) return;
+pub fn hideHydrationReminder() void {
+    if (hydration_window == null) return;
 
-    std.log.info("Blink: hiding reminder", .{});
+    std.log.info("Hydration: hiding reminder", .{});
 
     // Start fade out
     fade_target_alpha = 0.0;
@@ -182,17 +182,17 @@ pub fn hideBlinkReminder() void {
     startFadeTimer();
 }
 
-pub fn updateBlinkAnimation(tick_val: u32) void {
-    const label: objc.id = eye_label orelse return;
+pub fn updateHydrationAnimation(tick_val: u32) void {
+    const label: objc.id = water_label orelse return;
 
-    // Alternate between open eye and closed
+    // Alternate between water droplet and faucet
     if (tick_val % 2 == 0) {
-        appkit.setStringValue(label, "\xf0\x9f\x91\x81"); // "👁"
+        appkit.setStringValue(label, "\xf0\x9f\x92\xa7"); // "💧"
     } else {
-        appkit.setStringValue(label, "\xe2\x80\x94"); // "—"
+        appkit.setStringValue(label, "\xf0\x9f\x9a\xb0"); // "🚰"
     }
 }
 
 pub fn isVisible() bool {
-    return blink_window != null;
+    return hydration_window != null;
 }

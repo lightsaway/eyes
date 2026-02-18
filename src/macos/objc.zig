@@ -118,16 +118,33 @@ pub fn msgSend_void2(target: anytype, selector: SEL, a1: anytype, a2: anytype) v
     f(asId(target), selector, a1, a2);
 }
 
+pub fn msgSend_void3(target: anytype, selector: SEL, a1: anytype, a2: anytype, a3: anytype) void {
+    const A1 = @TypeOf(a1);
+    const A2 = @TypeOf(a2);
+    const A3 = @TypeOf(a3);
+    const f: *const fn (id, SEL, A1, A2, A3) callconv(.c) void = @ptrCast(&c.objc_msgSend);
+    f(asId(target), selector, a1, a2, a3);
+}
+
+pub fn msgSend_void4(target: anytype, selector: SEL, a1: anytype, a2: anytype, a3: anytype, a4: anytype) void {
+    const A1 = @TypeOf(a1);
+    const A2 = @TypeOf(a2);
+    const A3 = @TypeOf(a3);
+    const A4 = @TypeOf(a4);
+    const f: *const fn (id, SEL, A1, A2, A3, A4) callconv(.c) void = @ptrCast(&c.objc_msgSend);
+    f(asId(target), selector, a1, a2, a3, a4);
+}
+
 // Send message, return bool
 pub fn msgSend_bool(target: anytype, selector: SEL) bool {
-    const f: *const fn (id, SEL) callconv(.c) c.BOOL = @ptrCast(&c.objc_msgSend);
-    return f(asId(target), selector) != 0;
+    const f: *const fn (id, SEL) callconv(.c) bool = @ptrCast(&c.objc_msgSend);
+    return f(asId(target), selector);
 }
 
 pub fn msgSend_bool1(target: anytype, selector: SEL, a1: anytype) bool {
     const A1 = @TypeOf(a1);
-    const f: *const fn (id, SEL, A1) callconv(.c) c.BOOL = @ptrCast(&c.objc_msgSend);
-    return f(asId(target), selector, a1) != 0;
+    const f: *const fn (id, SEL, A1) callconv(.c) bool = @ptrCast(&c.objc_msgSend);
+    return f(asId(target), selector, a1);
 }
 
 // Send message, return NSUInteger
@@ -139,6 +156,12 @@ pub fn msgSend_uint(target: anytype, selector: SEL) NSUInteger {
 // Send message, return CGFloat
 pub fn msgSend_float(target: anytype, selector: SEL) CGFloat {
     const f: *const fn (id, SEL) callconv(.c) CGFloat = @ptrCast(&c.objc_msgSend);
+    return f(asId(target), selector);
+}
+
+// Send message, return NSInteger (c_long)
+pub fn msgSend_long(target: anytype, selector: SEL) c_long {
+    const f: *const fn (id, SEL) callconv(.c) c_long = @ptrCast(&c.objc_msgSend);
     return f(asId(target), selector);
 }
 

@@ -12,6 +12,15 @@ pub const Config = struct {
     posture_interval_secs: u32 = 30 * 60,
     blink_reminder_enabled: bool = false,
     blink_interval_secs: u32 = 30 * 60,
+    idle_threshold_secs: u32 = 5 * 60,
+    hydration_reminder_enabled: bool = false,
+    hydration_interval_secs: u32 = 45 * 60,
+    break_sound: u8 = 1,
+    respect_dnd: bool = true,
+    screen_lock_as_break: bool = true,
+    use_notification: bool = false,
+    gentle_mode: bool = false,
+    strict_mode: bool = false,
 };
 
 const config_dir = ".config/eyes";
@@ -31,11 +40,17 @@ pub fn load() Config {
     var path_buf: [512]u8 = undefined;
     const path = fmtPathZ(&path_buf, "{s}/{s}/{s}", .{ home, config_dir, config_file }) orelse return Config{};
 
-    const file = std.fs.cwd().openFileZ(path, .{}) catch return Config{};
+    const file = std.fs.cwd().openFileZ(path, .{}) catch |err| {
+        if (err != error.FileNotFound) std.log.warn("config load: open failed: {}", .{err});
+        return Config{};
+    };
     defer file.close();
 
-    var buf: [512]u8 = undefined;
-    const len = file.readAll(&buf) catch return Config{};
+    var buf: [1024]u8 = undefined;
+    const len = file.readAll(&buf) catch |err| {
+        std.log.warn("config load: read failed: {}", .{err});
+        return Config{};
+    };
     const data = buf[0..len];
 
     return parse(data);
@@ -48,21 +63,72 @@ pub fn save(cfg: Config) void {
     // Create ~/.config/eyes/ recursively
     var dir_buf: [512]u8 = undefined;
     const dir_path = fmtPathZ(&dir_buf, "{s}/{s}", .{ home, config_dir }) orelse return;
-    std.fs.cwd().makePath(dir_path) catch return;
+    std.fs.cwd().makePath(dir_path) catch |err| {
+        std.log.warn("config save: makePath failed: {}", .{err});
+        return;
+    };
 
     var path_buf: [512]u8 = undefined;
     const file_path = fmtPathZ(&path_buf, "{s}/{s}/{s}", .{ home, config_dir, config_file }) orelse return;
 
-    const file = std.fs.cwd().createFileZ(file_path, .{}) catch return;
+    const file = std.fs.cwd().createFileZ(file_path, .{}) catch |err| {
+        std.log.warn("config save: createFile failed: {}", .{err});
+        return;
+    };
     defer file.close();
 
-    const show_str: [*:0]const u8 = if (cfg.show_timer_in_menubar) "true" else "false";
-    const meetings_str: [*:0]const u8 = if (cfg.pause_during_meetings) "true" else "false";
-    const posture_str: [*:0]const u8 = if (cfg.posture_reminder_enabled) "true" else "false";
-    const blink_str: [*:0]const u8 = if (cfg.blink_reminder_enabled) "true" else "false";
-    var json_buf: [768]u8 = undefined;
-    const json = std.fmt.bufPrint(&json_buf, "{{\n  \"work_interval_secs\": {d},\n  \"break_duration_secs\": {d},\n  \"show_timer_in_menubar\": {s},\n  \"pause_during_meetings\": {s},\n  \"mic_check_interval_secs\": {d},\n  \"posture_reminder_enabled\": {s},\n  \"posture_interval_secs\": {d},\n  \"blink_reminder_enabled\": {s},\n  \"blink_interval_secs\": {d}\n}}\n", .{ cfg.work_interval_secs, cfg.break_duration_secs, show_str, meetings_str, cfg.mic_check_interval_secs, posture_str, cfg.posture_interval_secs, blink_str, cfg.blink_interval_secs }) catch return;
-    file.writeAll(json) catch {};
+    const boolStr = struct {
+        fn f(v: bool) [*:0]const u8 {
+            return if (v) "true" else "false";
+        }
+    }.f;
+
+    var json_buf: [2048]u8 = undefined;
+    const json = std.fmt.bufPrint(&json_buf,
+        \\{{
+        \\  "work_interval_secs": {d},
+        \\  "break_duration_secs": {d},
+        \\  "show_timer_in_menubar": {s},
+        \\  "pause_during_meetings": {s},
+        \\  "mic_check_interval_secs": {d},
+        \\  "posture_reminder_enabled": {s},
+        \\  "posture_interval_secs": {d},
+        \\  "blink_reminder_enabled": {s},
+        \\  "blink_interval_secs": {d},
+        \\  "idle_threshold_secs": {d},
+        \\  "hydration_reminder_enabled": {s},
+        \\  "hydration_interval_secs": {d},
+        \\  "break_sound": {d},
+        \\  "respect_dnd": {s},
+        \\  "screen_lock_as_break": {s},
+        \\  "use_notification": {s},
+        \\  "gentle_mode": {s},
+        \\  "strict_mode": {s}
+        \\}}
+        \\
+    , .{
+        cfg.work_interval_secs,
+        cfg.break_duration_secs,
+        boolStr(cfg.show_timer_in_menubar),
+        boolStr(cfg.pause_during_meetings),
+        cfg.mic_check_interval_secs,
+        boolStr(cfg.posture_reminder_enabled),
+        cfg.posture_interval_secs,
+        boolStr(cfg.blink_reminder_enabled),
+        cfg.blink_interval_secs,
+        cfg.idle_threshold_secs,
+        boolStr(cfg.hydration_reminder_enabled),
+        cfg.hydration_interval_secs,
+        cfg.break_sound,
+        boolStr(cfg.respect_dnd),
+        boolStr(cfg.screen_lock_as_break),
+        boolStr(cfg.use_notification),
+        boolStr(cfg.gentle_mode),
+        boolStr(cfg.strict_mode),
+    }) catch return;
+    file.writeAll(json) catch |err| {
+        std.log.warn("config save: write failed: {}", .{err});
+    };
 }
 
 /// Simple JSON parser for our config fields.
@@ -77,6 +143,17 @@ fn parse(data: []const u8) Config {
     cfg.posture_interval_secs = parseField(data, "posture_interval_secs") orelse cfg.posture_interval_secs;
     cfg.blink_reminder_enabled = parseBoolField(data, "blink_reminder_enabled") orelse cfg.blink_reminder_enabled;
     cfg.blink_interval_secs = parseField(data, "blink_interval_secs") orelse cfg.blink_interval_secs;
+    cfg.idle_threshold_secs = parseField(data, "idle_threshold_secs") orelse cfg.idle_threshold_secs;
+    cfg.hydration_reminder_enabled = parseBoolField(data, "hydration_reminder_enabled") orelse cfg.hydration_reminder_enabled;
+    cfg.hydration_interval_secs = parseField(data, "hydration_interval_secs") orelse cfg.hydration_interval_secs;
+    if (parseField(data, "break_sound")) |v| {
+        if (v <= 5) cfg.break_sound = @intCast(v);
+    }
+    cfg.respect_dnd = parseBoolField(data, "respect_dnd") orelse cfg.respect_dnd;
+    cfg.screen_lock_as_break = parseBoolField(data, "screen_lock_as_break") orelse cfg.screen_lock_as_break;
+    cfg.use_notification = parseBoolField(data, "use_notification") orelse cfg.use_notification;
+    cfg.gentle_mode = parseBoolField(data, "gentle_mode") orelse cfg.gentle_mode;
+    cfg.strict_mode = parseBoolField(data, "strict_mode") orelse cfg.strict_mode;
     return cfg;
 }
 
@@ -118,4 +195,79 @@ fn parseField(data: []const u8, key: []const u8) ?u32 {
     if (end == start) return null;
 
     return std.fmt.parseInt(u32, after_colon[start..end], 10) catch null;
+}
+
+// ---- Tests ----
+
+test "parse default config" {
+    const cfg = parse("");
+    try std.testing.expectEqual(@as(u32, 20 * 60), cfg.work_interval_secs);
+    try std.testing.expectEqual(@as(u32, 20), cfg.break_duration_secs);
+    try std.testing.expectEqual(true, cfg.show_timer_in_menubar);
+    try std.testing.expectEqual(false, cfg.pause_during_meetings);
+    try std.testing.expectEqual(false, cfg.hydration_reminder_enabled);
+    try std.testing.expectEqual(@as(u32, 45 * 60), cfg.hydration_interval_secs);
+    try std.testing.expectEqual(@as(u8, 1), cfg.break_sound);
+    try std.testing.expectEqual(true, cfg.respect_dnd);
+    try std.testing.expectEqual(true, cfg.screen_lock_as_break);
+    try std.testing.expectEqual(false, cfg.use_notification);
+    try std.testing.expectEqual(false, cfg.gentle_mode);
+    try std.testing.expectEqual(false, cfg.strict_mode);
+}
+
+test "parse full config" {
+    const data =
+        \\{
+        \\  "work_interval_secs": 1800,
+        \\  "break_duration_secs": 30,
+        \\  "show_timer_in_menubar": false,
+        \\  "pause_during_meetings": true,
+        \\  "mic_check_interval_secs": 10,
+        \\  "posture_reminder_enabled": true,
+        \\  "posture_interval_secs": 900,
+        \\  "blink_reminder_enabled": true,
+        \\  "blink_interval_secs": 600,
+        \\  "idle_threshold_secs": 180,
+        \\  "hydration_reminder_enabled": true,
+        \\  "hydration_interval_secs": 900,
+        \\  "break_sound": 3,
+        \\  "respect_dnd": false,
+        \\  "screen_lock_as_break": false,
+        \\  "use_notification": true,
+        \\  "gentle_mode": true,
+        \\  "strict_mode": true
+        \\}
+    ;
+    const cfg = parse(data);
+    try std.testing.expectEqual(@as(u32, 1800), cfg.work_interval_secs);
+    try std.testing.expectEqual(@as(u32, 30), cfg.break_duration_secs);
+    try std.testing.expectEqual(false, cfg.show_timer_in_menubar);
+    try std.testing.expectEqual(true, cfg.pause_during_meetings);
+    try std.testing.expectEqual(@as(u32, 10), cfg.mic_check_interval_secs);
+    try std.testing.expectEqual(true, cfg.posture_reminder_enabled);
+    try std.testing.expectEqual(@as(u32, 900), cfg.posture_interval_secs);
+    try std.testing.expectEqual(true, cfg.blink_reminder_enabled);
+    try std.testing.expectEqual(@as(u32, 600), cfg.blink_interval_secs);
+    try std.testing.expectEqual(@as(u32, 180), cfg.idle_threshold_secs);
+    try std.testing.expectEqual(true, cfg.hydration_reminder_enabled);
+    try std.testing.expectEqual(@as(u32, 900), cfg.hydration_interval_secs);
+    try std.testing.expectEqual(@as(u8, 3), cfg.break_sound);
+    try std.testing.expectEqual(false, cfg.respect_dnd);
+    try std.testing.expectEqual(false, cfg.screen_lock_as_break);
+    try std.testing.expectEqual(true, cfg.use_notification);
+    try std.testing.expectEqual(true, cfg.gentle_mode);
+    try std.testing.expectEqual(true, cfg.strict_mode);
+}
+
+test "parseBoolField" {
+    try std.testing.expectEqual(true, parseBoolField("\"foo\": true", "foo"));
+    try std.testing.expectEqual(false, parseBoolField("\"foo\": false", "foo"));
+    try std.testing.expectEqual(@as(?bool, null), parseBoolField("\"bar\": true", "foo"));
+}
+
+test "parseField" {
+    try std.testing.expectEqual(@as(?u32, 42), parseField("\"num\": 42", "num"));
+    try std.testing.expectEqual(@as(?u32, 0), parseField("\"num\": 0", "num"));
+    try std.testing.expectEqual(@as(?u32, null), parseField("\"other\": 5", "num"));
+    try std.testing.expectEqual(@as(?u32, null), parseField("\"num\": abc", "num"));
 }

@@ -1,20 +1,22 @@
-// Blink reminder — floating pill at bottom-center with blinking eye animation and fade.
+// Gentle mode — translucent banner at top of screen instead of fullscreen overlay.
 
 const std = @import("std");
 const objc = @import("macos/objc.zig");
 const appkit = @import("macos/appkit.zig");
 const foundation = @import("macos/foundation.zig");
+const app_mod = @import("app.zig");
 
 const CGFloat = objc.CGFloat;
 const NSRect = objc.NSRect;
 const NSPoint = objc.NSPoint;
 const NSSize = objc.NSSize;
 
-var blink_window: objc.id = null;
-var eye_label: objc.id = null;
+var banner_window: objc.id = null;
+var countdown_label: objc.id = null;
+var message_label: objc.id = null;
 
-const window_width: CGFloat = 120.0;
-const window_height: CGFloat = 80.0;
+const banner_width: CGFloat = 600.0;
+const banner_height: CGFloat = 80.0;
 
 // NSVisualEffectView constants
 const NSVisualEffectMaterialHUDWindow: c_long = 13;
@@ -31,6 +33,20 @@ const fade_step: CGFloat = 0.05;
 const fade_interval: f64 = 0.033;
 const max_visible_alpha: CGFloat = 0.95;
 
+const messages = [_][*:0]const u8{
+    "Look at something 20 feet away",
+    "Rest your eyes for a moment",
+    "Focus on a distant object",
+    "Give your eyes a break",
+    "Look away from the screen",
+    "Time to relax your eyes",
+};
+
+fn pickMessage() [*:0]const u8 {
+    const idx = @as(usize, @intCast(@mod(std.time.timestamp(), messages.len)));
+    return messages[idx];
+}
+
 fn cancelFadeTimer() void {
     if (fade_timer != null) {
         foundation.invalidateTimer(fade_timer);
@@ -42,7 +58,17 @@ fn startFadeTimer() void {
     cancelFadeTimer();
     const NSApp = appkit.sharedApplication();
     const delegate = objc.msgSend_id(NSApp, objc.sel("delegate"));
-    fade_timer = foundation.scheduledTimer(fade_interval, delegate, objc.sel("blinkFadeTick:"), true);
+    fade_timer = foundation.scheduledTimer(fade_interval, delegate, objc.sel("gentleFadeTick:"), true);
+}
+
+fn destroyWindow() void {
+    if (banner_window != null) {
+        appkit.orderOut(banner_window);
+        objc.release(banner_window);
+        banner_window = null;
+        countdown_label = null;
+        message_label = null;
+    }
 }
 
 pub fn fadeTick() void {
@@ -52,8 +78,8 @@ pub fn fadeTick() void {
         fade_current_alpha = @max(fade_current_alpha - fade_step, fade_target_alpha);
     }
 
-    if (blink_window != null) {
-        appkit.setAlphaValue(blink_window, fade_current_alpha);
+    if (banner_window != null) {
+        appkit.setAlphaValue(banner_window, fade_current_alpha);
     }
 
     if (fade_current_alpha == fade_target_alpha) {
@@ -65,34 +91,26 @@ pub fn fadeTick() void {
     }
 }
 
-fn destroyWindow() void {
-    if (blink_window != null) {
-        appkit.orderOut(blink_window);
-        objc.release(blink_window);
-        blink_window = null;
-        eye_label = null;
-    }
-}
-
-pub fn showBlinkReminder() void {
+pub fn showGentleBanner(state: *app_mod.AppState) void {
     if (fade_on_complete == .hide_after) {
         cancelFadeTimer();
         fade_on_complete = .none;
         destroyWindow();
     }
 
-    if (blink_window != null) return;
+    if (banner_window != null) return;
 
-    std.log.info("Blink: showing reminder", .{});
+    std.log.info("Gentle: showing banner", .{});
 
     const screen = appkit.mainScreen();
     const screen_rect = appkit.screenFrame(screen);
-    const x = (screen_rect.size.width - window_width) / 2.0;
+    const x = (screen_rect.size.width - banner_width) / 2.0;
+    const y = screen_rect.size.height - banner_height - 40.0; // near top
 
     const window = appkit.createWindow(
         NSRect{
-            .origin = NSPoint{ .x = x, .y = 60.0 },
-            .size = NSSize{ .width = window_width, .height = window_height },
+            .origin = NSPoint{ .x = x, .y = y },
+            .size = NSSize{ .width = banner_width, .height = banner_height },
         },
         appkit.NSWindowStyleMaskBorderless,
         appkit.NSBackingStoreBuffered,
@@ -114,53 +132,57 @@ pub fn showBlinkReminder() void {
     const effect_view = objc.init(objc.alloc(NSVisualEffectView));
     appkit.setViewFrame(effect_view, NSRect{
         .origin = NSPoint{ .x = 0.0, .y = 0.0 },
-        .size = NSSize{ .width = window_width, .height = window_height },
+        .size = NSSize{ .width = banner_width, .height = banner_height },
     });
     objc.msgSend_void1(effect_view, objc.sel("setMaterial:"), NSVisualEffectMaterialHUDWindow);
     objc.msgSend_void1(effect_view, objc.sel("setBlendingMode:"), NSVisualEffectBlendingModeBehindWindow);
     objc.msgSend_void1(effect_view, objc.sel("setState:"), NSVisualEffectStateActive);
     appkit.setWantsLayer(effect_view, true);
 
-    // Round corners on the effect view
+    // Round corners
     const effect_layer = objc.msgSend_id(effect_view, objc.sel("layer"));
     if (effect_layer != null) {
-        objc.msgSend_void1(effect_layer, objc.sel("setCornerRadius:"), @as(CGFloat, 20.0));
+        objc.msgSend_void1(effect_layer, objc.sel("setCornerRadius:"), @as(CGFloat, 16.0));
         objc.msgSend_void1(effect_layer, objc.sel("setMasksToBounds:"), @as(c_char, 1));
     }
     appkit.addSubview(content, effect_view);
 
-    // Eye label — alternates between open and closed
-    const label = appkit.createLabel("\xf0\x9f\x91\x81"); // "👁"
-    appkit.setFont(label, appkit.systemFont(36.0));
-    appkit.setTextColor(label, appkit.whiteColor());
-    appkit.setAlignment(label, appkit.NSTextAlignmentCenter);
-    appkit.setViewFrame(label, NSRect{
-        .origin = NSPoint{ .x = 0.0, .y = 20.0 },
-        .size = NSSize{ .width = window_width, .height = 44.0 },
-    });
-    appkit.addSubview(effect_view, label);
-    eye_label = label;
-
-    // Small hint text
+    // Message label (left side)
     const dark = appkit.isDarkMode();
-    const hint_color = if (dark) appkit.colorWithRGBA(1.0, 1.0, 1.0, 0.6) else appkit.colorWithRGBA(0.0, 0.0, 0.0, 0.6);
-    const hint = appkit.createLabel("blink");
-    appkit.setFont(hint, appkit.systemFont(11.0));
-    appkit.setTextColor(hint, hint_color);
-    appkit.setAlignment(hint, appkit.NSTextAlignmentCenter);
-    appkit.setViewFrame(hint, NSRect{
-        .origin = NSPoint{ .x = 0.0, .y = 4.0 },
-        .size = NSSize{ .width = window_width, .height = 16.0 },
+    const text_color = if (dark) appkit.whiteColor() else appkit.blackColor();
+    const msg_text = pickMessage();
+    const msg = appkit.createLabel(msg_text);
+    appkit.setFont(msg, appkit.systemFont(18.0));
+    appkit.setTextColor(msg, text_color);
+    appkit.setAlignment(msg, appkit.NSTextAlignmentCenter);
+    appkit.setViewFrame(msg, NSRect{
+        .origin = NSPoint{ .x = 20.0, .y = 20.0 },
+        .size = NSSize{ .width = 400.0, .height = 40.0 },
     });
-    appkit.addSubview(effect_view, hint);
+    appkit.addSubview(effect_view, msg);
+    message_label = msg;
+
+    // Countdown label (right side)
+    var time_buf = state.formatBreakRemaining();
+    const time_str: [*:0]const u8 = @ptrCast(&time_buf);
+    const countdown = appkit.createLabel(time_str);
+    appkit.setFont(countdown, appkit.monospacedSystemFont(36.0, appkit.NSFontWeightUltraLight));
+    appkit.setTextColor(countdown, text_color);
+    appkit.setAlignment(countdown, appkit.NSTextAlignmentCenter);
+    appkit.setViewFrame(countdown, NSRect{
+        .origin = NSPoint{ .x = 430.0, .y = 10.0 },
+        .size = NSSize{ .width = 150.0, .height = 60.0 },
+    });
+    appkit.addSubview(effect_view, countdown);
+    countdown_label = countdown;
 
     appkit.orderFront(window);
-    blink_window = window;
+    banner_window = window;
 
     // Accessibility
     appkit.setAccessibilityRole(window, "AXWindow");
-    appkit.setAccessibilityLabel(window, "Blink reminder");
-    appkit.postAccessibilityAnnouncement("Blink. Remember to blink your eyes.");
+    appkit.setAccessibilityLabel(window, "Break reminder banner");
+    appkit.postAccessibilityAnnouncement("Break time. Look at something 20 feet away.");
 
     // Start fade in
     fade_current_alpha = 0.0;
@@ -168,31 +190,28 @@ pub fn showBlinkReminder() void {
     fade_on_complete = .none;
     startFadeTimer();
 
-    appkit.playSystemSound("Pop");
+    appkit.playSystemSound("Tink");
 }
 
-pub fn hideBlinkReminder() void {
-    if (blink_window == null) return;
+pub fn hideGentleBanner() void {
+    if (banner_window == null) return;
 
-    std.log.info("Blink: hiding reminder", .{});
+    std.log.info("Gentle: hiding banner", .{});
 
-    // Start fade out
     fade_target_alpha = 0.0;
     fade_on_complete = .hide_after;
     startFadeTimer();
 }
 
-pub fn updateBlinkAnimation(tick_val: u32) void {
-    const label: objc.id = eye_label orelse return;
+pub fn updateGentleBanner(state: *app_mod.AppState) void {
+    var time_buf = state.formatBreakRemaining();
+    const time_str: [*:0]const u8 = @ptrCast(&time_buf);
 
-    // Alternate between open eye and closed
-    if (tick_val % 2 == 0) {
-        appkit.setStringValue(label, "\xf0\x9f\x91\x81"); // "👁"
-    } else {
-        appkit.setStringValue(label, "\xe2\x80\x94"); // "—"
+    if (countdown_label != null) {
+        appkit.setStringValue(countdown_label, time_str);
     }
 }
 
 pub fn isVisible() bool {
-    return blink_window != null;
+    return banner_window != null;
 }

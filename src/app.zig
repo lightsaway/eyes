@@ -1,13 +1,15 @@
 // App state and break timer logic.
 
 const std = @import("std");
-const objc = @import("macos/objc.zig");
-const overlay = @import("overlay.zig");
-const posture = @import("posture.zig");
-const blink = @import("blink.zig");
-const menubar = @import("menubar.zig");
+const platform = @import("platform.zig");
 const config = @import("config.zig");
-const coreaudio = @import("macos/coreaudio.zig");
+
+const overlay = platform.backend.overlay;
+const gentle = platform.backend.gentle;
+const posture = platform.backend.posture;
+const blink = platform.backend.blink;
+const hydration = platform.backend.hydration;
+const menubar = platform.backend.menubar;
 
 pub const AppState = struct {
     // Configuration
@@ -35,6 +37,10 @@ pub const AppState = struct {
     is_posture_showing: bool = false,
     posture_tick: u32 = 0,
 
+    // Idle detection
+    idle_threshold_secs: u32 = 5 * 60,
+    is_idle: bool = false,
+
     // Blink reminder
     blink_reminder_enabled: bool = false,
     blink_interval_secs: u32 = 30 * 60,
@@ -43,6 +49,43 @@ pub const AppState = struct {
     blink_seconds_remaining: i32 = 0,
     is_blink_showing: bool = false,
     blink_tick: u32 = 0,
+
+    // Hydration reminder
+    hydration_reminder_enabled: bool = false,
+    hydration_interval_secs: u32 = 45 * 60,
+    hydration_duration_secs: u32 = 5,
+    seconds_until_hydration: i32 = 45 * 60,
+    hydration_seconds_remaining: i32 = 0,
+    is_hydration_showing: bool = false,
+    hydration_tick: u32 = 0,
+
+    // Sound
+    break_sound: u8 = 1,
+
+    // Do Not Disturb
+    respect_dnd: bool = true,
+    is_dnd_active: bool = false,
+    dnd_check_counter: u32 = 0,
+
+    // Screen lock as break
+    screen_lock_as_break: bool = true,
+    screen_locked: bool = false,
+    lock_start_timestamp: i64 = 0,
+
+    // Notification mode
+    use_notification: bool = false,
+
+    // Gentle mode
+    gentle_mode: bool = false,
+
+    // Strict mode
+    strict_mode: bool = false,
+
+    // Statistics (daily, in-memory)
+    breaks_taken: u32 = 0,
+    breaks_skipped: u32 = 0,
+    breaks_delayed: u32 = 0,
+    stats_day: i64 = 0,
 
     pub fn reset(self: *AppState) void {
         self.seconds_until_break = @intCast(self.work_interval_secs);
@@ -53,21 +96,54 @@ pub const AppState = struct {
     pub fn startBreak(self: *AppState) void {
         self.is_on_break = true;
         self.break_seconds_remaining = @intCast(self.break_duration_secs);
-        overlay.showOverlay(self);
+        if (self.use_notification) {
+            platform.backend.deliverNotification("Eyes \xe2\x80\x94 Break Time", "Look at something 20 feet away");
+        } else if (self.gentle_mode) {
+            gentle.showGentleBanner(self);
+        } else {
+            overlay.showOverlay(self);
+        }
     }
 
     pub fn endBreak(self: *AppState) void {
+        if (self.is_on_break and self.break_seconds_remaining > 0) {
+            self.breaks_skipped += 1;
+        }
         self.is_on_break = false;
         self.break_seconds_remaining = 0;
         self.seconds_until_break = @intCast(self.work_interval_secs);
-        overlay.hideOverlay();
+        if (!self.use_notification) {
+            if (self.gentle_mode) {
+                gentle.hideGentleBanner();
+            } else {
+                overlay.hideOverlay();
+            }
+        }
     }
 
     pub fn delayBreak(self: *AppState, extra_secs: i32) void {
+        self.breaks_delayed += 1;
         if (self.is_on_break) {
-            self.endBreak();
+            // Don't count as skipped when delaying
+            self.is_on_break = false;
+            self.break_seconds_remaining = 0;
+            if (!self.use_notification) {
+                if (self.gentle_mode) {
+                    gentle.hideGentleBanner();
+                } else {
+                    overlay.hideOverlay();
+                }
+            }
         }
         self.seconds_until_break = extra_secs;
+    }
+
+    pub fn toggleBreak(self: *AppState) void {
+        if (self.is_on_break) {
+            self.endBreak();
+        } else {
+            self.startBreak();
+        }
     }
 
     pub fn togglePause(self: *AppState) void {
@@ -107,6 +183,16 @@ pub fn applyConfig(cfg: config.Config) void {
     state.blink_reminder_enabled = cfg.blink_reminder_enabled;
     state.blink_interval_secs = cfg.blink_interval_secs;
     state.seconds_until_blink = @intCast(cfg.blink_interval_secs);
+    state.idle_threshold_secs = cfg.idle_threshold_secs;
+    state.hydration_reminder_enabled = cfg.hydration_reminder_enabled;
+    state.hydration_interval_secs = cfg.hydration_interval_secs;
+    state.seconds_until_hydration = @intCast(cfg.hydration_interval_secs);
+    state.break_sound = cfg.break_sound;
+    state.respect_dnd = cfg.respect_dnd;
+    state.screen_lock_as_break = cfg.screen_lock_as_break;
+    state.use_notification = cfg.use_notification;
+    state.gentle_mode = cfg.gentle_mode;
+    state.strict_mode = cfg.strict_mode;
     state.reset();
     config.save(cfg);
     std.log.info("Config applied: {d}s work / {d}s break, timer_in_menubar={}", .{ cfg.work_interval_secs, cfg.break_duration_secs, cfg.show_timer_in_menubar });
@@ -124,6 +210,15 @@ pub fn saveConfig() void {
         .posture_interval_secs = state.posture_interval_secs,
         .blink_reminder_enabled = state.blink_reminder_enabled,
         .blink_interval_secs = state.blink_interval_secs,
+        .idle_threshold_secs = state.idle_threshold_secs,
+        .hydration_reminder_enabled = state.hydration_reminder_enabled,
+        .hydration_interval_secs = state.hydration_interval_secs,
+        .break_sound = state.break_sound,
+        .respect_dnd = state.respect_dnd,
+        .screen_lock_as_break = state.screen_lock_as_break,
+        .use_notification = state.use_notification,
+        .gentle_mode = state.gentle_mode,
+        .strict_mode = state.strict_mode,
     });
 }
 
@@ -139,34 +234,158 @@ pub fn loadConfig() void {
     state.posture_interval_secs = cfg.posture_interval_secs;
     state.blink_reminder_enabled = cfg.blink_reminder_enabled;
     state.blink_interval_secs = cfg.blink_interval_secs;
+    state.idle_threshold_secs = cfg.idle_threshold_secs;
+    state.hydration_reminder_enabled = cfg.hydration_reminder_enabled;
+    state.hydration_interval_secs = cfg.hydration_interval_secs;
+    state.break_sound = cfg.break_sound;
+    state.respect_dnd = cfg.respect_dnd;
+    state.screen_lock_as_break = cfg.screen_lock_as_break;
+    state.use_notification = cfg.use_notification;
+    state.gentle_mode = cfg.gentle_mode;
+    state.strict_mode = cfg.strict_mode;
     state.seconds_until_break = @intCast(cfg.work_interval_secs);
     state.seconds_until_posture = @intCast(cfg.posture_interval_secs);
     state.seconds_until_blink = @intCast(cfg.blink_interval_secs);
-    std.log.info("Config loaded: {d}s work / {d}s break, timer_in_menubar={}, pause_meetings={}, posture_enabled={}, posture_interval={d}s, blink_enabled={}, blink_interval={d}s", .{ cfg.work_interval_secs, cfg.break_duration_secs, cfg.show_timer_in_menubar, cfg.pause_during_meetings, cfg.posture_reminder_enabled, cfg.posture_interval_secs, cfg.blink_reminder_enabled, cfg.blink_interval_secs });
+    state.seconds_until_hydration = @intCast(cfg.hydration_interval_secs);
+    std.log.info("Config loaded: {d}s work / {d}s break", .{ cfg.work_interval_secs, cfg.break_duration_secs });
 }
 
-// Called every second by the NSTimer
+/// Reset daily stats if the day has changed.
+fn maybeResetDailyStats() void {
+    const today = @divTrunc(std.time.timestamp(), 86400);
+    if (state.stats_day != today) {
+        state.breaks_taken = 0;
+        state.breaks_skipped = 0;
+        state.breaks_delayed = 0;
+        state.stats_day = today;
+    }
+}
+
+// Called every second by the platform timer
 pub fn tick() void {
+    // Reset daily stats if needed
+    maybeResetDailyStats();
+
+    // Screen lock — skip all processing while locked
+    if (state.screen_locked) {
+        menubar.updateMenu();
+        return;
+    }
+
+    // Check DND / Focus state
+    if (state.respect_dnd) {
+        state.dnd_check_counter += 1;
+        if (state.dnd_check_counter >= 10) {
+            state.dnd_check_counter = 0;
+            const was_active = state.is_dnd_active;
+            state.is_dnd_active = platform.backend.isDNDActive();
+            if (state.is_dnd_active != was_active) {
+                menubar.markDirty();
+                if (state.is_dnd_active) {
+                    std.log.info("Focus/DND active \xe2\x80\x94 pausing reminders", .{});
+                } else {
+                    std.log.info("Focus/DND ended \xe2\x80\x94 resuming reminders", .{});
+                }
+            }
+        }
+        if (state.is_dnd_active) {
+            // Dismiss any active reminders
+            if (state.is_on_break) state.endBreak();
+            if (state.is_posture_showing) {
+                posture.hidePostureReminder();
+                state.is_posture_showing = false;
+            }
+            if (state.is_blink_showing) {
+                blink.hideBlinkReminder();
+                state.is_blink_showing = false;
+            }
+            if (state.is_hydration_showing) {
+                hydration.hideHydrationReminder();
+                state.is_hydration_showing = false;
+            }
+            menubar.updateMenu();
+            return;
+        }
+    }
+
     // Check microphone state for meeting detection
     if (state.pause_during_meetings) {
         state.mic_check_counter += 1;
         if (state.mic_check_counter >= state.mic_check_interval_secs) {
             state.mic_check_counter = 0;
-            state.last_mic_active = coreaudio.isAnyMicrophoneActive();
+            state.last_mic_active = platform.backend.isAnyMicrophoneActive();
         }
         if (state.last_mic_active and !state.meeting_paused) {
-            std.log.info("Meeting detected — mic active, pausing timer", .{});
+            std.log.info("Meeting detected \xe2\x80\x94 mic active, pausing timer", .{});
             state.meeting_paused = true;
+            menubar.markDirty();
         } else if (!state.last_mic_active and state.meeting_paused) {
-            std.log.info("Meeting ended — mic inactive, resuming timer", .{});
+            std.log.info("Meeting ended \xe2\x80\x94 mic inactive, resuming timer", .{});
             state.meeting_paused = false;
+            menubar.markDirty();
         }
     } else {
         state.meeting_paused = false;
     }
 
-    if (state.is_paused or state.meeting_paused) {
-        // Dismiss active reminders when paused
+    // Idle detection
+    if (state.idle_threshold_secs > 0) {
+        if (platform.backend.getIdleSeconds()) |idle_secs| {
+            if (idle_secs >= state.idle_threshold_secs) {
+                if (!state.is_idle) {
+                    std.log.info("User idle ({d}s >= {d}s threshold)", .{ idle_secs, state.idle_threshold_secs });
+                    state.is_idle = true;
+                    menubar.markDirty();
+                    // End break if active
+                    if (state.is_on_break) {
+                        state.endBreak();
+                    }
+                    if (state.is_posture_showing) {
+                        posture.hidePostureReminder();
+                        state.is_posture_showing = false;
+                    }
+                    if (state.is_blink_showing) {
+                        blink.hideBlinkReminder();
+                        state.is_blink_showing = false;
+                    }
+                    if (state.is_hydration_showing) {
+                        hydration.hideHydrationReminder();
+                        state.is_hydration_showing = false;
+                    }
+                }
+                menubar.updateMenu();
+                return;
+            } else if (state.is_idle) {
+                // User returned from idle — reset all countdowns
+                std.log.info("User returned from idle, resetting timers", .{});
+                state.is_idle = false;
+                menubar.markDirty();
+                state.seconds_until_break = @intCast(state.work_interval_secs);
+                state.seconds_until_posture = @intCast(state.posture_interval_secs);
+                state.seconds_until_blink = @intCast(state.blink_interval_secs);
+                state.seconds_until_hydration = @intCast(state.hydration_interval_secs);
+            }
+        }
+    }
+
+    // Always tick an active break (e.g. user clicked "Take Break Now" during a meeting)
+    if (state.is_on_break) {
+        state.break_seconds_remaining -= 1;
+        if (state.break_seconds_remaining <= 0) {
+            state.breaks_taken += 1;
+            menubar.markDirty();
+            state.endBreak();
+        } else {
+            if (state.use_notification) {
+                // No overlay to update in notification mode
+            } else if (state.gentle_mode) {
+                gentle.updateGentleBanner(&state);
+            } else {
+                overlay.updateOverlay(&state);
+            }
+        }
+    } else if (state.is_paused or state.meeting_paused) {
+        // Paused — dismiss reminders and skip work timer, but don't block active breaks above
         if (state.is_posture_showing) {
             posture.hidePostureReminder();
             state.is_posture_showing = false;
@@ -177,20 +396,17 @@ pub fn tick() void {
             state.is_blink_showing = false;
             state.seconds_until_blink = @intCast(state.blink_interval_secs);
         }
+        if (state.is_hydration_showing) {
+            hydration.hideHydrationReminder();
+            state.is_hydration_showing = false;
+            state.seconds_until_hydration = @intCast(state.hydration_interval_secs);
+        }
         menubar.updateMenu();
         return;
-    }
-
-    if (state.is_on_break) {
-        state.break_seconds_remaining -= 1;
-        if (state.break_seconds_remaining <= 0) {
-            state.endBreak();
-        } else {
-            overlay.updateOverlay(&state);
-        }
     } else {
         state.seconds_until_break -= 1;
         if (state.seconds_until_break <= 0) {
+            menubar.markDirty();
             state.startBreak();
         }
     }
@@ -220,7 +436,6 @@ pub fn tick() void {
 
     // Posture reminder logic (independent of eye breaks)
     if (state.posture_reminder_enabled) {
-        std.log.info("Posture tick: countdown={d}, showing={}", .{ state.seconds_until_posture, state.is_posture_showing });
         if (state.is_posture_showing) {
             state.posture_seconds_remaining -= 1;
             state.posture_tick +%= 1;
@@ -242,10 +457,28 @@ pub fn tick() void {
         }
     }
 
-    menubar.updateMenu();
-}
+    // Hydration reminder logic (independent of other reminders)
+    if (state.hydration_reminder_enabled) {
+        if (state.is_hydration_showing) {
+            state.hydration_seconds_remaining -= 1;
+            state.hydration_tick +%= 1;
+            if (state.hydration_seconds_remaining <= 0) {
+                hydration.hideHydrationReminder();
+                state.is_hydration_showing = false;
+                state.seconds_until_hydration = @intCast(state.hydration_interval_secs);
+            } else {
+                hydration.updateHydrationAnimation(state.hydration_tick);
+            }
+        } else if (!state.is_on_break) {
+            state.seconds_until_hydration -= 1;
+            if (state.seconds_until_hydration <= 0) {
+                hydration.showHydrationReminder();
+                state.is_hydration_showing = true;
+                state.hydration_seconds_remaining = @intCast(state.hydration_duration_secs);
+                state.hydration_tick = 0;
+            }
+        }
+    }
 
-// ObjC callback for NSTimer
-pub fn timerCallback(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    tick();
+    menubar.updateMenu();
 }
