@@ -1,4 +1,4 @@
-// Hydration reminder — floating pill with slide-up entrance, floating bob, and slide-out exit.
+// Stretch reminder — floating pill with slide-up entrance, floating bob, and slide-out exit.
 
 const std = @import("std");
 const objc = @import("macos/objc.zig");
@@ -14,8 +14,8 @@ const NSRect = objc.NSRect;
 const NSPoint = objc.NSPoint;
 const NSSize = objc.NSSize;
 
-var hydration_window: objc.id = null;
-var water_label: objc.id = null;
+var stretch_window: objc.id = null;
+var stretch_label: objc.id = null;
 var gif_view: objc.id = null;
 
 const window_width: CGFloat = 120.0;
@@ -53,7 +53,7 @@ fn startFadeTimer() void {
     cancelFadeTimer();
     const NSApp = appkit.sharedApplication();
     const delegate = objc.msgSend_id(NSApp, objc.sel("delegate"));
-    fade_timer = foundation.scheduledTimer(fade_interval, delegate, objc.sel("hydrationFadeTick:"), true);
+    fade_timer = foundation.scheduledTimer(fade_interval, delegate, objc.sel("stretchFadeTick:"), true);
 }
 
 fn easeOut(p: f32) f32 {
@@ -75,7 +75,7 @@ pub fn fadeTick() void {
                 slide_progress = 1.0;
                 slide_phase = .visible;
             }
-            screen_x = pill_layout.getX(.hydration, cached_screen_width, false);
+            screen_x = pill_layout.getX(.stretch, cached_screen_width, false);
             pill_layout.repositionAll();
             const t = easeOut(slide_progress);
             const y = -window_height + (target_y + window_height) * @as(CGFloat, @floatCast(t));
@@ -95,7 +95,7 @@ pub fn fadeTick() void {
                 pill_layout.repositionAll();
                 return;
             }
-            screen_x = pill_layout.getX(.hydration, cached_screen_width, false);
+            screen_x = pill_layout.getX(.stretch, cached_screen_width, false);
             pill_layout.repositionAll();
             const t = easeIn(slide_progress);
             const y = target_y - (target_y + window_height) * @as(CGFloat, @floatCast(t));
@@ -109,12 +109,12 @@ pub fn fadeTick() void {
 }
 
 fn applyPosition(y: CGFloat, alpha: CGFloat) void {
-    if (hydration_window != null) {
-        appkit.setWindowFrame(hydration_window, NSRect{
+    if (stretch_window != null) {
+        appkit.setWindowFrame(stretch_window, NSRect{
             .origin = NSPoint{ .x = screen_x, .y = y },
             .size = NSSize{ .width = window_width, .height = window_height },
         });
-        appkit.setAlphaValue(hydration_window, alpha);
+        appkit.setAlphaValue(stretch_window, alpha);
     }
 }
 
@@ -123,28 +123,28 @@ fn destroyWindow() void {
         gifview.destroy(gif_view);
         gif_view = null;
     }
-    if (hydration_window != null) {
-        appkit.orderOut(hydration_window);
-        objc.release(hydration_window);
-        hydration_window = null;
-        water_label = null;
+    if (stretch_window != null) {
+        appkit.orderOut(stretch_window);
+        objc.release(stretch_window);
+        stretch_window = null;
+        stretch_label = null;
     }
 }
 
-pub fn showHydrationReminder() void {
+pub fn showStretchReminder() void {
     if (slide_phase == .sliding_out) {
         cancelFadeTimer();
         destroyWindow();
     }
 
-    if (hydration_window != null) return;
+    if (stretch_window != null) return;
 
-    std.log.info("Hydration: showing reminder", .{});
+    std.log.info("Stretch: showing reminder", .{});
 
     const screen = appkit.mainScreen();
     const screen_rect = appkit.screenFrame(screen);
     cached_screen_width = screen_rect.size.width;
-    screen_x = pill_layout.getX(.hydration, cached_screen_width, true);
+    screen_x = pill_layout.getX(.stretch, cached_screen_width, true);
 
     const window = appkit.createWindow(
         NSRect{
@@ -191,7 +191,7 @@ pub fn showHydrationReminder() void {
         .size = NSSize{ .width = window_width, .height = 44.0 },
     };
 
-    if (config.gifString(&app_mod.state.hydration_gif)) |gif_name| {
+    if (config.gifString(&app_mod.state.stretch_gif)) |gif_name| {
         const home = std.posix.getenv("HOME") orelse "";
         var path_buf: [512]u8 = undefined;
         const slice = std.fmt.bufPrint(path_buf[0 .. path_buf.len - 1], "{s}/.config/eyes/{s}", .{ home, gif_name }) catch null;
@@ -207,19 +207,19 @@ pub fn showHydrationReminder() void {
     }
 
     if (gif_view == null) {
-        const label = appkit.createLabel("\xf0\x9f\x92\xa7"); // "💧"
+        const label = appkit.createLabel("\xf0\x9f\x99\x86"); // "🙆"
         appkit.setFont(label, appkit.systemFont(36.0));
         appkit.setTextColor(label, appkit.whiteColor());
         appkit.setAlignment(label, appkit.NSTextAlignmentCenter);
         appkit.setViewFrame(label, emoji_frame);
         appkit.addSubview(effect_view, label);
-        water_label = label;
+        stretch_label = label;
     }
 
     // Small hint text
     const dark = appkit.isDarkMode();
     const hint_color = if (dark) appkit.colorWithRGBA(1.0, 1.0, 1.0, 0.6) else appkit.colorWithRGBA(0.0, 0.0, 0.0, 0.6);
-    const hint = appkit.createLabel("drink water");
+    const hint = appkit.createLabel("stretch");
     appkit.setFont(hint, appkit.systemFont(11.0));
     appkit.setTextColor(hint, hint_color);
     appkit.setAlignment(hint, appkit.NSTextAlignmentCenter);
@@ -230,12 +230,12 @@ pub fn showHydrationReminder() void {
     appkit.addSubview(effect_view, hint);
 
     appkit.orderFront(window);
-    hydration_window = window;
+    stretch_window = window;
 
     // Accessibility
     appkit.setAccessibilityRole(window, "AXWindow");
-    appkit.setAccessibilityLabel(window, "Hydration reminder");
-    appkit.postAccessibilityAnnouncement("Drink water. Stay hydrated.");
+    appkit.setAccessibilityLabel(window, "Stretch reminder");
+    appkit.postAccessibilityAnnouncement("Time to stretch your body.");
 
     // Start slide-in
     slide_phase = .sliding_in;
@@ -248,10 +248,10 @@ pub fn showHydrationReminder() void {
     appkit.playSystemSound("Pop");
 }
 
-pub fn hideHydrationReminder() void {
-    if (hydration_window == null) return;
+pub fn hideStretchReminder() void {
+    if (stretch_window == null) return;
 
-    std.log.info("Hydration: hiding reminder", .{});
+    std.log.info("Stretch: hiding reminder", .{});
 
     slide_phase = .sliding_out;
     slide_progress = 0.0;
@@ -260,29 +260,29 @@ pub fn hideHydrationReminder() void {
     pill_layout.repositionAll();
 }
 
-pub fn updateHydrationAnimation(tick_val: u32) void {
-    if (hydration_window == null or slide_phase != .visible) return;
+pub fn updateStretchAnimation(tick_val: u32) void {
+    if (stretch_window == null or slide_phase != .visible) return;
 
     // Recalculate x in case other pills appeared/disappeared
-    screen_x = pill_layout.getX(.hydration, cached_screen_width, false);
+    screen_x = pill_layout.getX(.stretch, cached_screen_width, false);
 
     // Floating bob
     const t: f32 = @floatFromInt(tick_val);
     const bob_offset: CGFloat = @floatCast(@sin(t * 0.5) * 3.0);
     applyPosition(target_y + bob_offset, max_visible_alpha);
 
-    // Alternate between water droplet and faucet
-    const label: objc.id = water_label orelse return;
+    // Alternate between person gesturing OK and person raising hand
+    const label: objc.id = stretch_label orelse return;
     if (tick_val % 2 == 0) {
-        appkit.setStringValue(label, "\xf0\x9f\x92\xa7"); // "💧"
+        appkit.setStringValue(label, "\xf0\x9f\x99\x86"); // "🙆"
     } else {
-        appkit.setStringValue(label, "\xf0\x9f\x9a\xb0"); // "🚰"
+        appkit.setStringValue(label, "\xf0\x9f\x99\x8b"); // "🙋"
     }
 }
 
 pub fn repositionIfNeeded() void {
-    if (hydration_window == null) return;
-    const new_x = pill_layout.getX(.hydration, cached_screen_width, false);
+    if (stretch_window == null) return;
+    const new_x = pill_layout.getX(.stretch, cached_screen_width, false);
     if (new_x != screen_x) {
         screen_x = new_x;
         if (slide_phase == .visible) {
@@ -292,5 +292,5 @@ pub fn repositionIfNeeded() void {
 }
 
 pub fn isVisible() bool {
-    return hydration_window != null;
+    return stretch_window != null;
 }

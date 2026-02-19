@@ -15,6 +15,8 @@ pub const Config = struct {
     idle_threshold_secs: u32 = 5 * 60,
     hydration_reminder_enabled: bool = false,
     hydration_interval_secs: u32 = 45 * 60,
+    stretch_reminder_enabled: bool = false,
+    stretch_interval_secs: u32 = 30 * 60,
     break_sound: u8 = 1,
     respect_dnd: bool = true,
     screen_lock_as_break: bool = true,
@@ -24,6 +26,7 @@ pub const Config = struct {
     posture_gif: [64]u8 = .{0} ** 64,
     blink_gif: [64]u8 = .{0} ** 64,
     hydration_gif: [64]u8 = .{0} ** 64,
+    stretch_gif: [64]u8 = .{0} ** 64,
 };
 
 const config_dir = ".config/eyes";
@@ -116,7 +119,10 @@ pub fn save(cfg: Config) void {
         \\  "strict_mode": {s},
         \\  "posture_gif": "{s}",
         \\  "blink_gif": "{s}",
-        \\  "hydration_gif": "{s}"
+        \\  "hydration_gif": "{s}",
+        \\  "stretch_reminder_enabled": {s},
+        \\  "stretch_interval_secs": {d},
+        \\  "stretch_gif": "{s}"
         \\}}
         \\
     , .{
@@ -141,6 +147,9 @@ pub fn save(cfg: Config) void {
         bufSlice(&cfg.posture_gif),
         bufSlice(&cfg.blink_gif),
         bufSlice(&cfg.hydration_gif),
+        boolStr(cfg.stretch_reminder_enabled),
+        cfg.stretch_interval_secs,
+        bufSlice(&cfg.stretch_gif),
     }) catch return;
     file.writeAll(json) catch |err| {
         std.log.warn("config save: write failed: {}", .{err});
@@ -173,6 +182,9 @@ fn parse(data: []const u8) Config {
     parseStringField(data, "posture_gif", &cfg.posture_gif);
     parseStringField(data, "blink_gif", &cfg.blink_gif);
     parseStringField(data, "hydration_gif", &cfg.hydration_gif);
+    cfg.stretch_reminder_enabled = parseBoolField(data, "stretch_reminder_enabled") orelse cfg.stretch_reminder_enabled;
+    cfg.stretch_interval_secs = parseField(data, "stretch_interval_secs") orelse cfg.stretch_interval_secs;
+    parseStringField(data, "stretch_gif", &cfg.stretch_gif);
     return cfg;
 }
 

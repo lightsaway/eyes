@@ -7,6 +7,7 @@ const foundation = @import("macos/foundation.zig");
 const config = @import("config.zig");
 const app_mod = @import("app.zig");
 const gifview = @import("macos/gifview.zig");
+const pill_layout = @import("pill_layout.zig");
 
 const CGFloat = objc.CGFloat;
 const NSRect = objc.NSRect;
@@ -30,7 +31,8 @@ const NSVisualEffectStateActive: c_long = 1;
 const SlidePhase = enum { sliding_in, visible, sliding_out, hidden };
 var slide_phase: SlidePhase = .hidden;
 var slide_progress: f32 = 0.0;
-var screen_x: CGFloat = 0.0; // cached x position
+var screen_x: CGFloat = 0.0;
+var cached_screen_width: CGFloat = 0.0;
 
 // Fade/slide state
 var fade_timer: objc.id = null;
@@ -75,13 +77,15 @@ pub fn fadeTick() void {
                 slide_progress = 1.0;
                 slide_phase = .visible;
             }
+            // Recalculate x every frame so all pills stay in sync
+            screen_x = pill_layout.getX(.posture, cached_screen_width, false);
+            pill_layout.repositionAll();
             const t = easeOut(slide_progress);
             const y = -window_height + (target_y + window_height) * @as(CGFloat, @floatCast(t));
             fade_current_alpha = max_visible_alpha * @as(CGFloat, @floatCast(t));
             applyPosition(y, fade_current_alpha);
         },
         .visible => {
-            // Nothing to animate in the 30fps timer; bob is done in updateAnimation
             cancelFadeTimer();
         },
         .sliding_out => {
@@ -91,8 +95,12 @@ pub fn fadeTick() void {
                 slide_phase = .hidden;
                 cancelFadeTimer();
                 destroyWindow();
+                // Reposition remaining pills now that we're gone
+                pill_layout.repositionAll();
                 return;
             }
+            screen_x = pill_layout.getX(.posture, cached_screen_width, false);
+            pill_layout.repositionAll();
             const t = easeIn(slide_progress);
             const y = target_y - (target_y + window_height) * @as(CGFloat, @floatCast(t));
             fade_current_alpha = max_visible_alpha * (1.0 - @as(CGFloat, @floatCast(t)));
@@ -139,7 +147,8 @@ pub fn showPostureReminder() void {
 
     const screen = appkit.mainScreen();
     const screen_rect = appkit.screenFrame(screen);
-    screen_x = (screen_rect.size.width - window_width) / 2.0;
+    cached_screen_width = screen_rect.size.width;
+    screen_x = pill_layout.getX(.posture, cached_screen_width, true);
 
     // Start below screen edge
     const window = appkit.createWindow(
@@ -242,6 +251,9 @@ pub fn showPostureReminder() void {
     fade_current_alpha = 0.0;
     startFadeTimer();
 
+    // Reposition other visible pills immediately
+    pill_layout.repositionAll();
+
     appkit.playSystemSound("Pop");
 }
 
@@ -254,10 +266,16 @@ pub fn hidePostureReminder() void {
     slide_phase = .sliding_out;
     slide_progress = 0.0;
     startFadeTimer();
+
+    // Reposition remaining pills immediately
+    pill_layout.repositionAll();
 }
 
 pub fn updatePostureAnimation(tick_val: u32) void {
     if (posture_window == null or slide_phase != .visible) return;
+
+    // Recalculate x in case other pills appeared/disappeared
+    screen_x = pill_layout.getX(.posture, cached_screen_width, false);
 
     // Floating bob: subtle 3px vertical oscillation
     const t: f32 = @floatFromInt(tick_val);
@@ -272,6 +290,18 @@ pub fn updatePostureAnimation(tick_val: u32) void {
         .origin = NSPoint{ .x = 0.0, .y = 8.0 + rise },
         .size = NSSize{ .width = window_width, .height = 64.0 },
     });
+}
+
+pub fn repositionIfNeeded() void {
+    if (posture_window == null) return;
+    const new_x = pill_layout.getX(.posture, cached_screen_width, false);
+    if (new_x != screen_x) {
+        screen_x = new_x;
+        // Only snap position if fully visible (sliding pills update via fadeTick)
+        if (slide_phase == .visible) {
+            applyPosition(target_y, max_visible_alpha);
+        }
+    }
 }
 
 pub fn isVisible() bool {

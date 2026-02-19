@@ -527,6 +527,39 @@ pub fn updateMenu() void {
         addItemAndRelease(m, hydration_item);
     }
 
+    // Stretch Reminder submenu
+    {
+        const stretch_item = appkit.createMenuItem("Stretch Reminder", null, "");
+        const stretch_menu = appkit.createMenu();
+
+        const stretch_toggle = appkit.createMenuItem("Enabled", objc.sel("toggleStretchReminder:"), "");
+        appkit.setTarget(stretch_toggle, delegate);
+        appkit.setMenuItemState(stretch_toggle, app_mod.state.stretch_reminder_enabled);
+        addItemAndRelease(stretch_menu, stretch_toggle);
+
+        appkit.addItem(stretch_menu, appkit.createSeparator());
+
+        const stretch_intervals = [_]struct { secs: u32, label: [*:0]const u8, sel_name: [*:0]const u8 }{
+            .{ .secs = 5, .label = "Every 5 sec (test)", .sel_name = "stretchInterval5s:" },
+            .{ .secs = 15 * 60, .label = "Every 15 min", .sel_name = "stretchInterval15:" },
+            .{ .secs = 30 * 60, .label = "Every 30 min", .sel_name = "stretchInterval30:" },
+            .{ .secs = 45 * 60, .label = "Every 45 min", .sel_name = "stretchInterval45:" },
+            .{ .secs = 60 * 60, .label = "Every 60 min", .sel_name = "stretchInterval60:" },
+        };
+        for (stretch_intervals) |si| {
+            const si_item = appkit.createMenuItem(si.label, objc.sel(si.sel_name), "");
+            appkit.setTarget(si_item, delegate);
+            if (app_mod.state.stretch_interval_secs == si.secs) {
+                appkit.setMenuItemState(si_item, true);
+            }
+            addItemAndRelease(stretch_menu, si_item);
+        }
+
+        appkit.setSubmenu(stretch_item, stretch_menu);
+        objc.release(stretch_menu);
+        addItemAndRelease(m, stretch_item);
+    }
+
     appkit.addItem(m, appkit.createSeparator());
 
     // About Eyes

@@ -32,6 +32,7 @@ const delegate_methods = [_]Method{
     .{ .sel_name = "postureFadeTick:", .impl = @ptrCast(&postureFadeTick) },
     .{ .sel_name = "blinkFadeTick:", .impl = @ptrCast(&blinkFadeTick) },
     .{ .sel_name = "hydrationFadeTick:", .impl = @ptrCast(&hydrationFadeTick) },
+    .{ .sel_name = "stretchFadeTick:", .impl = @ptrCast(&stretchFadeTick) },
     .{ .sel_name = "gentleFadeTick:", .impl = @ptrCast(&gentleFadeTick) },
 
     // Menu actions
@@ -81,6 +82,14 @@ const delegate_methods = [_]Method{
     .{ .sel_name = "hydrationInterval30:", .impl = @ptrCast(&hydrationInterval30) },
     .{ .sel_name = "hydrationInterval45:", .impl = @ptrCast(&hydrationInterval45) },
     .{ .sel_name = "hydrationInterval60:", .impl = @ptrCast(&hydrationInterval60) },
+
+    // Stretch reminder
+    .{ .sel_name = "toggleStretchReminder:", .impl = @ptrCast(&toggleStretchReminder) },
+    .{ .sel_name = "stretchInterval5s:", .impl = @ptrCast(&stretchInterval5s) },
+    .{ .sel_name = "stretchInterval15:", .impl = @ptrCast(&stretchInterval15) },
+    .{ .sel_name = "stretchInterval30:", .impl = @ptrCast(&stretchInterval30) },
+    .{ .sel_name = "stretchInterval45:", .impl = @ptrCast(&stretchInterval45) },
+    .{ .sel_name = "stretchInterval60:", .impl = @ptrCast(&stretchInterval60) },
 
     // Idle detection
     .{ .sel_name = "idleOff:", .impl = @ptrCast(&idleOff) },
@@ -405,6 +414,46 @@ fn hydrationInterval60(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     setHydrationInterval(60 * 60);
 }
 
+// Stretch reminder callbacks
+fn toggleStretchReminder(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    app_mod.state.stretch_reminder_enabled = !app_mod.state.stretch_reminder_enabled;
+    if (app_mod.state.stretch_reminder_enabled) {
+        app_mod.state.seconds_until_stretch = @intCast(app_mod.state.stretch_interval_secs);
+    } else {
+        if (app_mod.state.is_stretch_showing) {
+            platform.backend.stretch.hideStretchReminder();
+            app_mod.state.is_stretch_showing = false;
+        }
+    }
+    app_mod.saveConfig();
+    menubar_mod.markDirty();
+    menubar_mod.updateMenu();
+}
+
+fn setStretchInterval(secs: u32) void {
+    app_mod.state.stretch_interval_secs = secs;
+    app_mod.state.seconds_until_stretch = @intCast(secs);
+    app_mod.saveConfig();
+    menubar_mod.markDirty();
+    menubar_mod.updateMenu();
+}
+
+fn stretchInterval5s(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setStretchInterval(5);
+}
+fn stretchInterval15(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setStretchInterval(15 * 60);
+}
+fn stretchInterval30(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setStretchInterval(30 * 60);
+}
+fn stretchInterval45(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setStretchInterval(45 * 60);
+}
+fn stretchInterval60(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    setStretchInterval(60 * 60);
+}
+
 // Idle detection callbacks
 fn setIdleThreshold(secs: u32) void {
     app_mod.state.idle_threshold_secs = secs;
@@ -442,12 +491,15 @@ fn applyPreset(work_secs: u32, brk_secs: u32) void {
         .idle_threshold_secs = app_mod.state.idle_threshold_secs,
         .hydration_reminder_enabled = app_mod.state.hydration_reminder_enabled,
         .hydration_interval_secs = app_mod.state.hydration_interval_secs,
+        .stretch_reminder_enabled = app_mod.state.stretch_reminder_enabled,
+        .stretch_interval_secs = app_mod.state.stretch_interval_secs,
         .break_sound = app_mod.state.break_sound,
         .respect_dnd = app_mod.state.respect_dnd,
         .screen_lock_as_break = app_mod.state.screen_lock_as_break,
         .use_notification = app_mod.state.use_notification,
         .gentle_mode = app_mod.state.gentle_mode,
         .strict_mode = app_mod.state.strict_mode,
+        .stretch_gif = app_mod.state.stretch_gif,
     });
     menubar_mod.markDirty();
     menubar_mod.updateMenu();
@@ -630,6 +682,10 @@ fn blinkFadeTick(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
 
 fn hydrationFadeTick(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     platform.backend.hydration.fadeTick();
+}
+
+fn stretchFadeTick(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    platform.backend.stretch.fadeTick();
 }
 
 fn gentleFadeTick(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {

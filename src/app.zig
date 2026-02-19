@@ -9,6 +9,7 @@ const gentle = platform.backend.gentle;
 const posture = platform.backend.posture;
 const blink = platform.backend.blink;
 const hydration = platform.backend.hydration;
+const stretch = platform.backend.stretch;
 const menubar = platform.backend.menubar;
 
 pub const AppState = struct {
@@ -59,6 +60,15 @@ pub const AppState = struct {
     is_hydration_showing: bool = false,
     hydration_tick: u32 = 0,
 
+    // Stretch reminder
+    stretch_reminder_enabled: bool = false,
+    stretch_interval_secs: u32 = 30 * 60,
+    stretch_duration_secs: u32 = 5,
+    seconds_until_stretch: i32 = 30 * 60,
+    stretch_seconds_remaining: i32 = 0,
+    is_stretch_showing: bool = false,
+    stretch_tick: u32 = 0,
+
     // Sound
     break_sound: u8 = 1,
 
@@ -85,6 +95,7 @@ pub const AppState = struct {
     posture_gif: [64]u8 = .{0} ** 64,
     blink_gif: [64]u8 = .{0} ** 64,
     hydration_gif: [64]u8 = .{0} ** 64,
+    stretch_gif: [64]u8 = .{0} ** 64,
 
     // Statistics (daily, in-memory)
     breaks_taken: u32 = 0,
@@ -192,6 +203,9 @@ pub fn applyConfig(cfg: config.Config) void {
     state.hydration_reminder_enabled = cfg.hydration_reminder_enabled;
     state.hydration_interval_secs = cfg.hydration_interval_secs;
     state.seconds_until_hydration = @intCast(cfg.hydration_interval_secs);
+    state.stretch_reminder_enabled = cfg.stretch_reminder_enabled;
+    state.stretch_interval_secs = cfg.stretch_interval_secs;
+    state.seconds_until_stretch = @intCast(cfg.stretch_interval_secs);
     state.break_sound = cfg.break_sound;
     state.respect_dnd = cfg.respect_dnd;
     state.screen_lock_as_break = cfg.screen_lock_as_break;
@@ -201,6 +215,7 @@ pub fn applyConfig(cfg: config.Config) void {
     state.posture_gif = cfg.posture_gif;
     state.blink_gif = cfg.blink_gif;
     state.hydration_gif = cfg.hydration_gif;
+    state.stretch_gif = cfg.stretch_gif;
     state.reset();
     config.save(cfg);
     std.log.info("Config applied: {d}s work / {d}s break, timer_in_menubar={}", .{ cfg.work_interval_secs, cfg.break_duration_secs, cfg.show_timer_in_menubar });
@@ -221,6 +236,8 @@ pub fn saveConfig() void {
         .idle_threshold_secs = state.idle_threshold_secs,
         .hydration_reminder_enabled = state.hydration_reminder_enabled,
         .hydration_interval_secs = state.hydration_interval_secs,
+        .stretch_reminder_enabled = state.stretch_reminder_enabled,
+        .stretch_interval_secs = state.stretch_interval_secs,
         .break_sound = state.break_sound,
         .respect_dnd = state.respect_dnd,
         .screen_lock_as_break = state.screen_lock_as_break,
@@ -230,6 +247,7 @@ pub fn saveConfig() void {
         .posture_gif = state.posture_gif,
         .blink_gif = state.blink_gif,
         .hydration_gif = state.hydration_gif,
+        .stretch_gif = state.stretch_gif,
     });
 }
 
@@ -248,6 +266,8 @@ pub fn loadConfig() void {
     state.idle_threshold_secs = cfg.idle_threshold_secs;
     state.hydration_reminder_enabled = cfg.hydration_reminder_enabled;
     state.hydration_interval_secs = cfg.hydration_interval_secs;
+    state.stretch_reminder_enabled = cfg.stretch_reminder_enabled;
+    state.stretch_interval_secs = cfg.stretch_interval_secs;
     state.break_sound = cfg.break_sound;
     state.respect_dnd = cfg.respect_dnd;
     state.screen_lock_as_break = cfg.screen_lock_as_break;
@@ -257,10 +277,12 @@ pub fn loadConfig() void {
     state.posture_gif = cfg.posture_gif;
     state.blink_gif = cfg.blink_gif;
     state.hydration_gif = cfg.hydration_gif;
+    state.stretch_gif = cfg.stretch_gif;
     state.seconds_until_break = @intCast(cfg.work_interval_secs);
     state.seconds_until_posture = @intCast(cfg.posture_interval_secs);
     state.seconds_until_blink = @intCast(cfg.blink_interval_secs);
     state.seconds_until_hydration = @intCast(cfg.hydration_interval_secs);
+    state.seconds_until_stretch = @intCast(cfg.stretch_interval_secs);
     std.log.info("Config loaded: {d}s work / {d}s break", .{ cfg.work_interval_secs, cfg.break_duration_secs });
 }
 
@@ -317,6 +339,10 @@ pub fn tick() void {
                 hydration.hideHydrationReminder();
                 state.is_hydration_showing = false;
             }
+            if (state.is_stretch_showing) {
+                stretch.hideStretchReminder();
+                state.is_stretch_showing = false;
+            }
             menubar.updateMenu();
             return;
         }
@@ -366,6 +392,10 @@ pub fn tick() void {
                         hydration.hideHydrationReminder();
                         state.is_hydration_showing = false;
                     }
+                    if (state.is_stretch_showing) {
+                        stretch.hideStretchReminder();
+                        state.is_stretch_showing = false;
+                    }
                 }
                 menubar.updateMenu();
                 return;
@@ -378,6 +408,7 @@ pub fn tick() void {
                 state.seconds_until_posture = @intCast(state.posture_interval_secs);
                 state.seconds_until_blink = @intCast(state.blink_interval_secs);
                 state.seconds_until_hydration = @intCast(state.hydration_interval_secs);
+                state.seconds_until_stretch = @intCast(state.stretch_interval_secs);
             }
         }
     }
@@ -414,6 +445,11 @@ pub fn tick() void {
             hydration.hideHydrationReminder();
             state.is_hydration_showing = false;
             state.seconds_until_hydration = @intCast(state.hydration_interval_secs);
+        }
+        if (state.is_stretch_showing) {
+            stretch.hideStretchReminder();
+            state.is_stretch_showing = false;
+            state.seconds_until_stretch = @intCast(state.stretch_interval_secs);
         }
         menubar.updateMenu();
         return;
@@ -490,6 +526,29 @@ pub fn tick() void {
                 state.is_hydration_showing = true;
                 state.hydration_seconds_remaining = @intCast(state.hydration_duration_secs);
                 state.hydration_tick = 0;
+            }
+        }
+    }
+
+    // Stretch reminder logic (independent of other reminders)
+    if (state.stretch_reminder_enabled) {
+        if (state.is_stretch_showing) {
+            state.stretch_seconds_remaining -= 1;
+            state.stretch_tick +%= 1;
+            if (state.stretch_seconds_remaining <= 0) {
+                stretch.hideStretchReminder();
+                state.is_stretch_showing = false;
+                state.seconds_until_stretch = @intCast(state.stretch_interval_secs);
+            } else {
+                stretch.updateStretchAnimation(state.stretch_tick);
+            }
+        } else if (!state.is_on_break) {
+            state.seconds_until_stretch -= 1;
+            if (state.seconds_until_stretch <= 0) {
+                stretch.showStretchReminder();
+                state.is_stretch_showing = true;
+                state.stretch_seconds_remaining = @intCast(state.stretch_duration_secs);
+                state.stretch_tick = 0;
             }
         }
     }

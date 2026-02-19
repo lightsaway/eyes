@@ -18,6 +18,7 @@ pub const gentle = @import("../gentle.zig");
 pub const posture = @import("../posture.zig");
 pub const blink = @import("../blink.zig");
 pub const hydration = @import("../hydration.zig");
+pub const stretch = @import("../stretch.zig");
 pub const menubar = @import("../menubar.zig");
 pub const launchagent = @import("../launchagent.zig");
 
