@@ -215,10 +215,24 @@ fn toggleStartAtLogin(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
 }
 
 fn toggleNotification(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    const was_notification = app_mod.state.use_notification;
+    const was_gentle = app_mod.state.gentle_mode;
     app_mod.state.use_notification = !app_mod.state.use_notification;
     if (app_mod.state.use_notification) {
         // Disable gentle mode if enabling notification mode
         app_mod.state.gentle_mode = false;
+        // Hide any active break UI from the mode we're leaving
+        if (app_mod.state.is_on_break) {
+            if (was_gentle) {
+                platform.backend.gentle.hideGentleBanner();
+            } else if (!was_notification) {
+                platform.backend.overlay.hideOverlay();
+            }
+        }
+    } else if (was_notification and app_mod.state.is_on_break) {
+        // Notification mode has no persistent UI to dismiss, but end the break
+        // so the user isn't stuck in an invisible break state
+        app_mod.state.endBreak();
     }
     app_mod.saveConfig();
     menubar_mod.markDirty();
@@ -226,10 +240,14 @@ fn toggleNotification(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
 }
 
 fn toggleGentleMode(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    const was_gentle = app_mod.state.gentle_mode;
     app_mod.state.gentle_mode = !app_mod.state.gentle_mode;
     if (app_mod.state.gentle_mode) {
         // Disable notification mode if enabling gentle mode
         app_mod.state.use_notification = false;
+    } else if (was_gentle and app_mod.state.is_on_break) {
+        // Hiding the gentle banner since we're switching away from gentle mode mid-break
+        platform.backend.gentle.hideGentleBanner();
     }
     app_mod.saveConfig();
     menubar_mod.markDirty();
