@@ -4,7 +4,7 @@ const posture = @import("posture.zig");
 const blink = @import("blink.zig");
 const hydration = @import("hydration.zig");
 const stretch = @import("stretch.zig");
-const CGFloat = @import("macos/objc.zig").CGFloat;
+const CGFloat = @import("../macos/objc.zig").CGFloat;
 
 pub const PillType = enum { posture, blink, hydration, stretch };
 
