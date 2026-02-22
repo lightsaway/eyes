@@ -224,14 +224,16 @@ pub fn updateMenu() void {
     // Pause/Resume
     const delegate = getDelegate();
     {
-        const item = appkit.createMenuItem(if (app_mod.state.is_paused) "Resume" else "Pause", objc.sel("togglePause:"), "");
+        const pause_key: [1:0]u8 = .{app_mod.state.hotkey_pause};
+        const item = appkit.createMenuItem(if (app_mod.state.is_paused) "Resume" else "Pause", objc.sel("togglePause:"), &pause_key);
         appkit.setTarget(item, delegate);
         addItemAndRelease(m, item);
     }
 
     // Take break now
     if (!app_mod.state.is_on_break) {
-        const item = appkit.createMenuItem("Take Break Now", objc.sel("takeBreakNow:"), "");
+        const break_key: [1:0]u8 = .{app_mod.state.hotkey_break};
+        const item = appkit.createMenuItem("Take Break Now", objc.sel("takeBreakNow:"), &break_key);
         appkit.setTarget(item, delegate);
         addItemAndRelease(m, item);
     }

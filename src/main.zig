@@ -8,7 +8,6 @@ const app_mod = @import("app.zig");
 const objc = platform.backend.objc;
 const appkit = platform.backend.appkit;
 const foundation = platform.backend.foundation;
-const cg = platform.backend.cg;
 const menubar_mod = platform.backend.menubar;
 const launchagent = platform.backend.launchagent;
 
@@ -145,9 +144,6 @@ fn appDidFinishLaunching(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void 
 
     // Set up menu bar
     menubar_mod.setup();
-
-    // Set up global hotkey (Cmd+Shift+E)
-    setupGlobalHotkey();
 
     // Register for screen lock/unlock notifications
     if (app_mod.state.screen_lock_as_break) {
@@ -517,6 +513,8 @@ fn applyPreset(work_secs: u32, brk_secs: u32) void {
         .use_notification = app_mod.state.use_notification,
         .gentle_mode = app_mod.state.gentle_mode,
         .strict_mode = app_mod.state.strict_mode,
+        .hotkey_break = app_mod.state.hotkey_break,
+        .hotkey_pause = app_mod.state.hotkey_pause,
         .stretch_gif = app_mod.state.stretch_gif,
     });
     menubar_mod.markDirty();
@@ -708,54 +706,6 @@ fn stretchFadeTick(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
 
 fn gentleFadeTick(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     platform.backend.gentle.fadeTick();
-}
-
-// Global hotkey event tap callback
-fn hotkeyCallback(_: ?*anyopaque, event_type: cg.CGEventType, event: ?*anyopaque, _: ?*anyopaque) callconv(.c) ?*anyopaque {
-    if (event_type != cg.kCGEventKeyDown) return event;
-
-    const flags = cg.CGEventGetFlags(event);
-    const keycode = cg.CGEventGetIntegerValueField(event, cg.kCGKeyboardEventKeycode);
-
-    // Cmd+Shift+E: keycode 14 = E
-    const required = cg.kCGEventFlagMaskCommand | cg.kCGEventFlagMaskShift;
-    if ((flags & required) == required and keycode == 14) {
-        app_mod.state.toggleBreak();
-        menubar_mod.markDirty();
-        menubar_mod.updateMenu();
-    }
-
-    return event;
-}
-
-fn setupGlobalHotkey() void {
-    // CGEventMask for keyDown: 1 << kCGEventKeyDown
-    const event_mask: u64 = @as(u64, 1) << cg.kCGEventKeyDown;
-
-    const tap = cg.CGEventTapCreate(
-        @intFromEnum(cg.CGEventTapLocation.cgSessionEventTap),
-        @intFromEnum(cg.CGEventTapPlacement.headInsertEventTap),
-        @intFromEnum(cg.CGEventTapOptions.listenOnly),
-        event_mask,
-        &hotkeyCallback,
-        null,
-    );
-
-    if (tap == null) {
-        std.log.warn("Failed to create event tap \xe2\x80\x94 grant Accessibility permission in System Settings", .{});
-        return;
-    }
-
-    const source = cg.CFMachPortCreateRunLoopSource(null, tap, 0);
-    if (source == null) {
-        std.log.warn("Failed to create run loop source for event tap", .{});
-        return;
-    }
-
-    cg.CFRunLoopAddSource(cg.CFRunLoopGetCurrent(), source, cg.kCFRunLoopCommonModes);
-    cg.CGEventTapEnable(tap, true);
-
-    std.log.info("Global hotkey Cmd+Shift+E registered", .{});
 }
 
 pub fn main() !void {

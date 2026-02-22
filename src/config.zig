@@ -23,6 +23,8 @@ pub const Config = struct {
     use_notification: bool = false,
     gentle_mode: bool = false,
     strict_mode: bool = false,
+    hotkey_break: u8 = 'e',
+    hotkey_pause: u8 = 'p',
     posture_gif: [64]u8 = .{0} ** 64,
     blink_gif: [64]u8 = .{0} ** 64,
     hydration_gif: [64]u8 = .{0} ** 64,
@@ -117,6 +119,8 @@ pub fn save(cfg: Config) void {
         \\  "use_notification": {s},
         \\  "gentle_mode": {s},
         \\  "strict_mode": {s},
+        \\  "hotkey_break": {d},
+        \\  "hotkey_pause": {d},
         \\  "posture_gif": "{s}",
         \\  "blink_gif": "{s}",
         \\  "hydration_gif": "{s}",
@@ -144,6 +148,8 @@ pub fn save(cfg: Config) void {
         boolStr(cfg.use_notification),
         boolStr(cfg.gentle_mode),
         boolStr(cfg.strict_mode),
+        cfg.hotkey_break,
+        cfg.hotkey_pause,
         bufSlice(&cfg.posture_gif),
         bufSlice(&cfg.blink_gif),
         bufSlice(&cfg.hydration_gif),
@@ -179,6 +185,12 @@ fn parse(data: []const u8) Config {
     cfg.use_notification = parseBoolField(data, "use_notification") orelse cfg.use_notification;
     cfg.gentle_mode = parseBoolField(data, "gentle_mode") orelse cfg.gentle_mode;
     cfg.strict_mode = parseBoolField(data, "strict_mode") orelse cfg.strict_mode;
+    if (parseField(data, "hotkey_break")) |v| {
+        if ((v >= 'a' and v <= 'z') or (v >= '0' and v <= '9')) cfg.hotkey_break = @intCast(v);
+    }
+    if (parseField(data, "hotkey_pause")) |v| {
+        if ((v >= 'a' and v <= 'z') or (v >= '0' and v <= '9')) cfg.hotkey_pause = @intCast(v);
+    }
     parseStringField(data, "posture_gif", &cfg.posture_gif);
     parseStringField(data, "blink_gif", &cfg.blink_gif);
     parseStringField(data, "hydration_gif", &cfg.hydration_gif);

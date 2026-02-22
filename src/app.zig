@@ -91,6 +91,10 @@ pub const AppState = struct {
     // Strict mode
     strict_mode: bool = false,
 
+    // Hotkeys
+    hotkey_break: u8 = 'e',
+    hotkey_pause: u8 = 'p',
+
     // GIF filenames (null-terminated, empty = disabled)
     posture_gif: [64]u8 = .{0} ** 64,
     blink_gif: [64]u8 = .{0} ** 64,
@@ -212,6 +216,8 @@ pub fn applyConfig(cfg: config.Config) void {
     state.use_notification = cfg.use_notification;
     state.gentle_mode = cfg.gentle_mode;
     state.strict_mode = cfg.strict_mode;
+    state.hotkey_break = cfg.hotkey_break;
+    state.hotkey_pause = cfg.hotkey_pause;
     state.posture_gif = cfg.posture_gif;
     state.blink_gif = cfg.blink_gif;
     state.hydration_gif = cfg.hydration_gif;
@@ -244,6 +250,8 @@ pub fn saveConfig() void {
         .use_notification = state.use_notification,
         .gentle_mode = state.gentle_mode,
         .strict_mode = state.strict_mode,
+        .hotkey_break = state.hotkey_break,
+        .hotkey_pause = state.hotkey_pause,
         .posture_gif = state.posture_gif,
         .blink_gif = state.blink_gif,
         .hydration_gif = state.hydration_gif,
@@ -274,6 +282,8 @@ pub fn loadConfig() void {
     state.use_notification = cfg.use_notification;
     state.gentle_mode = cfg.gentle_mode;
     state.strict_mode = cfg.strict_mode;
+    state.hotkey_break = cfg.hotkey_break;
+    state.hotkey_pause = cfg.hotkey_pause;
     state.posture_gif = cfg.posture_gif;
     state.blink_gif = cfg.blink_gif;
     state.hydration_gif = cfg.hydration_gif;

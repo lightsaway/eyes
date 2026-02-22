@@ -41,7 +41,8 @@ pub fn build(b: *std.Build) void {
         "sh", "-c",
         "mkdir -p zig-out/Eyes.app/Contents/MacOS zig-out/Eyes.app/Contents/Resources && " ++
             "cp zig-out/bin/eyes zig-out/Eyes.app/Contents/MacOS/eyes && " ++
-            "cp resources/Info.plist zig-out/Eyes.app/Contents/Info.plist",
+            "cp resources/Info.plist zig-out/Eyes.app/Contents/Info.plist && " ++
+            "test ! -f resources/AppIcon.icns || cp resources/AppIcon.icns zig-out/Eyes.app/Contents/Resources/AppIcon.icns",
     });
     mkdir_cmd.step.dependOn(b.getInstallStep());
     bundle_step.dependOn(&mkdir_cmd.step);
