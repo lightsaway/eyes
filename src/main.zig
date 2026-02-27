@@ -1,9 +1,10 @@
 // Eyes — Break reminder app.
-// Entry point: sets up the platform-specific event loop and starts the app.
+// macOS entry point: ObjC delegate registration, callconv(.c) callback wrappers, NSAlert dialogs.
 
 const std = @import("std");
 const platform = @import("platform.zig");
 const app_mod = @import("app.zig");
+const actions = @import("actions.zig");
 
 const objc = platform.backend.objc;
 const appkit = platform.backend.appkit;
@@ -46,6 +47,7 @@ const delegate_methods = [_]Method{
     .{ .sel_name = "toggleTimerInMenubar:", .impl = @ptrCast(&toggleTimerInMenubar) },
     .{ .sel_name = "toggleStartAtLogin:", .impl = @ptrCast(&toggleStartAtLogin) },
     .{ .sel_name = "togglePauseDuringMeetings:", .impl = @ptrCast(&togglePauseDuringMeetings) },
+    .{ .sel_name = "toggleSmartMeetingDetection:", .impl = @ptrCast(&toggleSmartMeetingDetection) },
     .{ .sel_name = "toggleNotification:", .impl = @ptrCast(&toggleNotification) },
     .{ .sel_name = "toggleGentleMode:", .impl = @ptrCast(&toggleGentleMode) },
     .{ .sel_name = "toggleStrictMode:", .impl = @ptrCast(&toggleStrictMode) },
@@ -114,6 +116,18 @@ const delegate_methods = [_]Method{
     .{ .sel_name = "soundPurr:", .impl = @ptrCast(&soundPurr) },
     .{ .sel_name = "soundHero:", .impl = @ptrCast(&soundHero) },
 
+    // Big break
+    .{ .sel_name = "toggleBigBreak:", .impl = @ptrCast(&toggleBigBreak) },
+    .{ .sel_name = "takeBigBreakNow:", .impl = @ptrCast(&takeBigBreakNow) },
+    .{ .sel_name = "bigBreakInterval30m:", .impl = @ptrCast(&bigBreakInterval30m) },
+    .{ .sel_name = "bigBreakInterval60m:", .impl = @ptrCast(&bigBreakInterval60m) },
+    .{ .sel_name = "bigBreakInterval90m:", .impl = @ptrCast(&bigBreakInterval90m) },
+    .{ .sel_name = "bigBreakInterval120m:", .impl = @ptrCast(&bigBreakInterval120m) },
+    .{ .sel_name = "bigBreakDuration2m:", .impl = @ptrCast(&bigBreakDuration2m) },
+    .{ .sel_name = "bigBreakDuration5m:", .impl = @ptrCast(&bigBreakDuration5m) },
+    .{ .sel_name = "bigBreakDuration10m:", .impl = @ptrCast(&bigBreakDuration10m) },
+    .{ .sel_name = "bigBreakDuration15m:", .impl = @ptrCast(&bigBreakDuration15m) },
+
     // Screen lock notifications
     .{ .sel_name = "screenDidLock:", .impl = @ptrCast(&screenDidLock) },
     .{ .sel_name = "screenDidUnlock:", .impl = @ptrCast(&screenDidUnlock) },
@@ -147,7 +161,7 @@ fn appDidFinishLaunching(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void 
 
     // Register for screen lock/unlock notifications
     if (app_mod.state.screen_lock_as_break) {
-        registerScreenLockNotifications();
+        platform.backend.registerScreenLockNotifications();
     }
 
     // Start the 1-second tick timer
@@ -155,53 +169,28 @@ fn appDidFinishLaunching(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void 
     _ = foundation.scheduledTimer(1.0, delegate, objc.sel("timerTick:"), true);
 }
 
-fn registerScreenLockNotifications() void {
-    const center = appkit.distributedNotificationCenter();
-    const delegate = objc.msgSend_id(appkit.sharedApplication(), objc.sel("delegate"));
-    appkit.addObserver(center, delegate, objc.sel("screenDidLock:"), "com.apple.screenIsLocked");
-    appkit.addObserver(center, delegate, objc.sel("screenDidUnlock:"), "com.apple.screenIsUnlocked");
-    std.log.info("Registered for screen lock/unlock notifications", .{});
-}
+// --- Thin callconv(.c) wrappers delegating to actions.* ---
 
+// Menu actions
 fn togglePause(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    app_mod.state.togglePause();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.togglePause();
 }
-
 fn takeBreakNow(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    app_mod.state.startBreak();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.takeBreakNow();
 }
-
 fn skipBreak(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    app_mod.state.endBreak();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.skipBreak();
 }
-
 fn delay1Min(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    app_mod.state.delayBreak(60);
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.delay1Min();
 }
-
 fn delay5Min(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    app_mod.state.delayBreak(5 * 60);
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.delay5Min();
 }
 
+// macOS-specific actions (stay in main.zig)
 fn quitApp(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     appkit.terminate(appkit.sharedApplication());
-}
-
-fn toggleTimerInMenubar(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    app_mod.state.show_timer_in_menubar = !app_mod.state.show_timer_in_menubar;
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
 }
 
 fn toggleStartAtLogin(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
@@ -210,334 +199,155 @@ fn toggleStartAtLogin(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     menubar_mod.updateMenu();
 }
 
+// Toggles
+fn toggleTimerInMenubar(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.toggleTimerInMenubar();
+}
 fn toggleNotification(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    const was_notification = app_mod.state.use_notification;
-    const was_gentle = app_mod.state.gentle_mode;
-    app_mod.state.use_notification = !app_mod.state.use_notification;
-    if (app_mod.state.use_notification) {
-        // Disable gentle mode if enabling notification mode
-        app_mod.state.gentle_mode = false;
-        // Hide any active break UI from the mode we're leaving
-        if (app_mod.state.is_on_break) {
-            if (was_gentle) {
-                platform.backend.gentle.hideGentleBanner();
-            } else if (!was_notification) {
-                platform.backend.overlay.hideOverlay();
-            }
-        }
-    } else if (was_notification and app_mod.state.is_on_break) {
-        // Notification mode has no persistent UI to dismiss, but end the break
-        // so the user isn't stuck in an invisible break state
-        app_mod.state.endBreak();
-    }
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.toggleNotification();
 }
-
 fn toggleGentleMode(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    const was_gentle = app_mod.state.gentle_mode;
-    app_mod.state.gentle_mode = !app_mod.state.gentle_mode;
-    if (app_mod.state.gentle_mode) {
-        // Disable notification mode if enabling gentle mode
-        app_mod.state.use_notification = false;
-    } else if (was_gentle and app_mod.state.is_on_break) {
-        // Hiding the gentle banner since we're switching away from gentle mode mid-break
-        platform.backend.gentle.hideGentleBanner();
-    }
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.toggleGentleMode();
 }
-
 fn toggleStrictMode(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    app_mod.state.strict_mode = !app_mod.state.strict_mode;
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.toggleStrictMode();
 }
-
 fn toggleRespectDND(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    app_mod.state.respect_dnd = !app_mod.state.respect_dnd;
-    if (!app_mod.state.respect_dnd) {
-        app_mod.state.is_dnd_active = false;
-    }
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.toggleRespectDND();
 }
-
 fn toggleScreenLockAsBreak(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    app_mod.state.screen_lock_as_break = !app_mod.state.screen_lock_as_break;
-    if (app_mod.state.screen_lock_as_break) {
-        registerScreenLockNotifications();
-    }
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.toggleScreenLockAsBreak();
+}
+fn togglePauseDuringMeetings(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.togglePauseDuringMeetings();
+}
+fn toggleSmartMeetingDetection(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.toggleSmartMeetingDetection();
 }
 
-fn setMicInterval(secs: u32) void {
-    app_mod.state.mic_check_interval_secs = secs;
-    app_mod.state.mic_check_counter = 0;
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
-}
-
+// Mic check intervals
 fn micInterval1(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setMicInterval(1);
+    actions.setMicInterval(1);
 }
 fn micInterval5(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setMicInterval(5);
+    actions.setMicInterval(5);
 }
 fn micInterval10(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setMicInterval(10);
+    actions.setMicInterval(10);
 }
 fn micInterval30(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setMicInterval(30);
-}
-
-fn togglePauseDuringMeetings(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    app_mod.state.pause_during_meetings = !app_mod.state.pause_during_meetings;
-    if (!app_mod.state.pause_during_meetings) {
-        app_mod.state.meeting_paused = false;
-    }
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.setMicInterval(30);
 }
 
 // Posture reminder callbacks
 fn togglePostureReminder(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    app_mod.state.posture_reminder_enabled = !app_mod.state.posture_reminder_enabled;
-    if (app_mod.state.posture_reminder_enabled) {
-        app_mod.state.seconds_until_posture = @intCast(app_mod.state.posture_interval_secs);
-    } else {
-        if (app_mod.state.is_posture_showing) {
-            platform.backend.posture.hidePostureReminder();
-            app_mod.state.is_posture_showing = false;
-        }
-    }
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.togglePostureReminder();
 }
-
-fn setPostureInterval(secs: u32) void {
-    app_mod.state.posture_interval_secs = secs;
-    app_mod.state.seconds_until_posture = @intCast(secs);
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
-}
-
 fn postureInterval5s(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setPostureInterval(5);
+    actions.setPostureInterval(5);
 }
 fn postureInterval15(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setPostureInterval(15 * 60);
+    actions.setPostureInterval(15 * 60);
 }
 fn postureInterval30(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setPostureInterval(30 * 60);
+    actions.setPostureInterval(30 * 60);
 }
 fn postureInterval45(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setPostureInterval(45 * 60);
+    actions.setPostureInterval(45 * 60);
 }
 fn postureInterval60(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setPostureInterval(60 * 60);
+    actions.setPostureInterval(60 * 60);
 }
 
 // Blink reminder callbacks
 fn toggleBlinkReminder(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    app_mod.state.blink_reminder_enabled = !app_mod.state.blink_reminder_enabled;
-    if (app_mod.state.blink_reminder_enabled) {
-        app_mod.state.seconds_until_blink = @intCast(app_mod.state.blink_interval_secs);
-    } else {
-        if (app_mod.state.is_blink_showing) {
-            platform.backend.blink.hideBlinkReminder();
-            app_mod.state.is_blink_showing = false;
-        }
-    }
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.toggleBlinkReminder();
 }
-
-fn setBlinkInterval(secs: u32) void {
-    app_mod.state.blink_interval_secs = secs;
-    app_mod.state.seconds_until_blink = @intCast(secs);
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
-}
-
 fn blinkInterval5s(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setBlinkInterval(5);
+    actions.setBlinkInterval(5);
 }
 fn blinkInterval15(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setBlinkInterval(15 * 60);
+    actions.setBlinkInterval(15 * 60);
 }
 fn blinkInterval30(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setBlinkInterval(30 * 60);
+    actions.setBlinkInterval(30 * 60);
 }
 fn blinkInterval45(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setBlinkInterval(45 * 60);
+    actions.setBlinkInterval(45 * 60);
 }
 fn blinkInterval60(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setBlinkInterval(60 * 60);
+    actions.setBlinkInterval(60 * 60);
 }
 
 // Hydration reminder callbacks
 fn toggleHydrationReminder(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    app_mod.state.hydration_reminder_enabled = !app_mod.state.hydration_reminder_enabled;
-    if (app_mod.state.hydration_reminder_enabled) {
-        app_mod.state.seconds_until_hydration = @intCast(app_mod.state.hydration_interval_secs);
-    } else {
-        if (app_mod.state.is_hydration_showing) {
-            platform.backend.hydration.hideHydrationReminder();
-            app_mod.state.is_hydration_showing = false;
-        }
-    }
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.toggleHydrationReminder();
 }
-
-fn setHydrationInterval(secs: u32) void {
-    app_mod.state.hydration_interval_secs = secs;
-    app_mod.state.seconds_until_hydration = @intCast(secs);
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
-}
-
 fn hydrationInterval5s(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setHydrationInterval(5);
+    actions.setHydrationInterval(5);
 }
 fn hydrationInterval15(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setHydrationInterval(15 * 60);
+    actions.setHydrationInterval(15 * 60);
 }
 fn hydrationInterval30(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setHydrationInterval(30 * 60);
+    actions.setHydrationInterval(30 * 60);
 }
 fn hydrationInterval45(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setHydrationInterval(45 * 60);
+    actions.setHydrationInterval(45 * 60);
 }
 fn hydrationInterval60(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setHydrationInterval(60 * 60);
+    actions.setHydrationInterval(60 * 60);
 }
 
 // Stretch reminder callbacks
 fn toggleStretchReminder(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    app_mod.state.stretch_reminder_enabled = !app_mod.state.stretch_reminder_enabled;
-    if (app_mod.state.stretch_reminder_enabled) {
-        app_mod.state.seconds_until_stretch = @intCast(app_mod.state.stretch_interval_secs);
-    } else {
-        if (app_mod.state.is_stretch_showing) {
-            platform.backend.stretch.hideStretchReminder();
-            app_mod.state.is_stretch_showing = false;
-        }
-    }
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.toggleStretchReminder();
 }
-
-fn setStretchInterval(secs: u32) void {
-    app_mod.state.stretch_interval_secs = secs;
-    app_mod.state.seconds_until_stretch = @intCast(secs);
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
-}
-
 fn stretchInterval5s(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setStretchInterval(5);
+    actions.setStretchInterval(5);
 }
 fn stretchInterval15(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setStretchInterval(15 * 60);
+    actions.setStretchInterval(15 * 60);
 }
 fn stretchInterval30(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setStretchInterval(30 * 60);
+    actions.setStretchInterval(30 * 60);
 }
 fn stretchInterval45(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setStretchInterval(45 * 60);
+    actions.setStretchInterval(45 * 60);
 }
 fn stretchInterval60(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setStretchInterval(60 * 60);
+    actions.setStretchInterval(60 * 60);
 }
 
 // Idle detection callbacks
-fn setIdleThreshold(secs: u32) void {
-    app_mod.state.idle_threshold_secs = secs;
-    app_mod.state.is_idle = false;
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
-}
-
 fn idleOff(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setIdleThreshold(0);
+    actions.setIdleThreshold(0);
 }
 fn idle3min(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setIdleThreshold(3 * 60);
+    actions.setIdleThreshold(3 * 60);
 }
 fn idle5min(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setIdleThreshold(5 * 60);
+    actions.setIdleThreshold(5 * 60);
 }
 fn idle10min(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setIdleThreshold(10 * 60);
+    actions.setIdleThreshold(10 * 60);
 }
 
 // Interval preset callbacks
-fn applyPreset(work_secs: u32, brk_secs: u32) void {
-    app_mod.applyConfig(.{
-        .work_interval_secs = work_secs,
-        .break_duration_secs = brk_secs,
-        .show_timer_in_menubar = app_mod.state.show_timer_in_menubar,
-        .pause_during_meetings = app_mod.state.pause_during_meetings,
-        .mic_check_interval_secs = app_mod.state.mic_check_interval_secs,
-        .posture_reminder_enabled = app_mod.state.posture_reminder_enabled,
-        .posture_interval_secs = app_mod.state.posture_interval_secs,
-        .blink_reminder_enabled = app_mod.state.blink_reminder_enabled,
-        .blink_interval_secs = app_mod.state.blink_interval_secs,
-        .idle_threshold_secs = app_mod.state.idle_threshold_secs,
-        .hydration_reminder_enabled = app_mod.state.hydration_reminder_enabled,
-        .hydration_interval_secs = app_mod.state.hydration_interval_secs,
-        .stretch_reminder_enabled = app_mod.state.stretch_reminder_enabled,
-        .stretch_interval_secs = app_mod.state.stretch_interval_secs,
-        .break_sound = app_mod.state.break_sound,
-        .respect_dnd = app_mod.state.respect_dnd,
-        .screen_lock_as_break = app_mod.state.screen_lock_as_break,
-        .use_notification = app_mod.state.use_notification,
-        .gentle_mode = app_mod.state.gentle_mode,
-        .strict_mode = app_mod.state.strict_mode,
-        .hotkey_break = app_mod.state.hotkey_break,
-        .hotkey_pause = app_mod.state.hotkey_pause,
-        .stretch_gif = app_mod.state.stretch_gif,
-    });
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
-}
-
 fn preset20_20(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    applyPreset(20 * 60, 20);
+    actions.applyPreset(20 * 60, 20);
 }
-
 fn preset30_30(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    applyPreset(30 * 60, 30);
+    actions.applyPreset(30 * 60, 30);
 }
-
 fn preset45_5(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    applyPreset(45 * 60, 5 * 60);
+    actions.applyPreset(45 * 60, 5 * 60);
 }
-
 fn preset60_5(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    applyPreset(60 * 60, 5 * 60);
+    actions.applyPreset(60 * 60, 5 * 60);
 }
 
-// Custom interval via NSAlert dialog
+// Custom interval via NSAlert dialog (macOS-specific)
 fn customInterval(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     const alert = appkit.createAlert();
     appkit.setAlertMessageText(alert, "Custom Interval");
@@ -603,14 +413,14 @@ fn customInterval(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
         if (work_val > 0 and break_val > 0) {
             const work_u32: u32 = @intCast(@max(1, @min(work_val, 180)));
             const break_u32: u32 = @intCast(@max(1, @min(break_val, 3600)));
-            applyPreset(work_u32 * 60, break_u32);
+            actions.applyPreset(work_u32 * 60, break_u32);
         }
     }
 
     objc.release(alert);
 }
 
-// About dialog
+// About dialog (macOS-specific)
 fn showAbout(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     const alert = appkit.createAlert();
     appkit.setAlertMessageText(alert, "Eyes v0.1.0");
@@ -620,90 +430,82 @@ fn showAbout(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     objc.release(alert);
 }
 
-// Sound callbacks
-fn setBreakSound(val: u8) void {
-    app_mod.state.break_sound = val;
-    app_mod.saveConfig();
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+// Big break callbacks
+fn toggleBigBreak(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.toggleBigBreak();
+}
+fn takeBigBreakNow(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.takeBigBreakNow();
+}
+fn bigBreakInterval30m(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.setBigBreakInterval(30 * 60);
+}
+fn bigBreakInterval60m(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.setBigBreakInterval(60 * 60);
+}
+fn bigBreakInterval90m(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.setBigBreakInterval(90 * 60);
+}
+fn bigBreakInterval120m(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.setBigBreakInterval(120 * 60);
+}
+fn bigBreakDuration2m(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.setBigBreakDuration(2 * 60);
+}
+fn bigBreakDuration5m(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.setBigBreakDuration(5 * 60);
+}
+fn bigBreakDuration10m(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.setBigBreakDuration(10 * 60);
+}
+fn bigBreakDuration15m(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.setBigBreakDuration(15 * 60);
 }
 
+// Sound callbacks
 fn soundNone(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setBreakSound(0);
+    actions.setBreakSound(0);
 }
 fn soundTink(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setBreakSound(1);
+    actions.setBreakSound(1);
 }
 fn soundPop(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setBreakSound(2);
+    actions.setBreakSound(2);
 }
 fn soundGlass(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setBreakSound(3);
+    actions.setBreakSound(3);
 }
 fn soundPurr(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setBreakSound(4);
+    actions.setBreakSound(4);
 }
 fn soundHero(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    setBreakSound(5);
+    actions.setBreakSound(5);
 }
 
 // Screen lock/unlock callbacks
 fn screenDidLock(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    if (!app_mod.state.screen_lock_as_break) return;
-
-    std.log.info("Screen locked", .{});
-    app_mod.state.screen_locked = true;
-    app_mod.state.lock_start_timestamp = std.time.timestamp();
-
-    // End active break if showing
-    if (app_mod.state.is_on_break) {
-        app_mod.state.endBreak();
-    }
-    menubar_mod.markDirty();
+    actions.screenDidLock();
 }
-
 fn screenDidUnlock(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
-    if (!app_mod.state.screen_lock_as_break) return;
-
-    std.log.info("Screen unlocked", .{});
-    app_mod.state.screen_locked = false;
-
-    if (app_mod.state.lock_start_timestamp > 0) {
-        const locked_duration = std.time.timestamp() - app_mod.state.lock_start_timestamp;
-        const break_duration: i64 = @intCast(app_mod.state.break_duration_secs);
-        if (locked_duration >= break_duration) {
-            // Count as a completed break
-            app_mod.state.breaks_taken += 1;
-            app_mod.state.seconds_until_break = @intCast(app_mod.state.work_interval_secs);
-            std.log.info("Screen was locked for {d}s >= {d}s break \xe2\x80\x94 counted as break", .{ locked_duration, break_duration });
-        }
-        app_mod.state.lock_start_timestamp = 0;
-    }
-    menubar_mod.markDirty();
-    menubar_mod.updateMenu();
+    actions.screenDidUnlock();
 }
 
 // Fade animation tick callbacks
 fn overlayFadeTick(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     platform.backend.overlay.fadeTick();
 }
-
 fn postureFadeTick(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     platform.backend.posture.fadeTick();
 }
-
 fn blinkFadeTick(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     platform.backend.blink.fadeTick();
 }
-
 fn hydrationFadeTick(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     platform.backend.hydration.fadeTick();
 }
-
 fn stretchFadeTick(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     platform.backend.stretch.fadeTick();
 }
-
 fn gentleFadeTick(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     platform.backend.gentle.fadeTick();
 }

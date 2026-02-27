@@ -378,10 +378,15 @@ pub fn updateMenu() void {
         const meetings_item = appkit.createMenuItem("Pause During Meetings", null, "");
         const meetings_menu = appkit.createMenu();
 
-        const meetings_toggle = appkit.createMenuItem("Enabled", objc.sel("togglePauseDuringMeetings:"), "");
-        appkit.setTarget(meetings_toggle, delegate);
-        appkit.setMenuItemState(meetings_toggle, app_mod.state.pause_during_meetings);
-        addItemAndRelease(meetings_menu, meetings_toggle);
+        const mic_toggle = appkit.createMenuItem("Mic Detection", objc.sel("togglePauseDuringMeetings:"), "");
+        appkit.setTarget(mic_toggle, delegate);
+        appkit.setMenuItemState(mic_toggle, app_mod.state.pause_during_meetings);
+        addItemAndRelease(meetings_menu, mic_toggle);
+
+        const smart_toggle = appkit.createMenuItem("Smart Detection (Window Titles)", objc.sel("toggleSmartMeetingDetection:"), "");
+        appkit.setTarget(smart_toggle, delegate);
+        appkit.setMenuItemState(smart_toggle, app_mod.state.smart_meeting_detection);
+        addItemAndRelease(meetings_menu, smart_toggle);
 
         appkit.addItem(meetings_menu, appkit.createSeparator());
 
@@ -442,8 +447,14 @@ pub fn updateMenu() void {
 
         appkit.addItem(posture_menu, appkit.createSeparator());
 
+        if (app_mod.state.show_test_settings) {
+            const test_item = appkit.createMenuItem("Every 5 sec (test)", objc.sel("postureInterval5s:"), "");
+            appkit.setTarget(test_item, delegate);
+            if (app_mod.state.posture_interval_secs == 5) appkit.setMenuItemState(test_item, true);
+            addItemAndRelease(posture_menu, test_item);
+        }
+
         const posture_intervals = [_]struct { secs: u32, label: [*:0]const u8, sel_name: [*:0]const u8 }{
-            .{ .secs = 5, .label = "Every 5 sec (test)", .sel_name = "postureInterval5s:" },
             .{ .secs = 15 * 60, .label = "Every 15 min", .sel_name = "postureInterval15:" },
             .{ .secs = 30 * 60, .label = "Every 30 min", .sel_name = "postureInterval30:" },
             .{ .secs = 45 * 60, .label = "Every 45 min", .sel_name = "postureInterval45:" },
@@ -475,8 +486,14 @@ pub fn updateMenu() void {
 
         appkit.addItem(blink_menu, appkit.createSeparator());
 
+        if (app_mod.state.show_test_settings) {
+            const test_item = appkit.createMenuItem("Every 5 sec (test)", objc.sel("blinkInterval5s:"), "");
+            appkit.setTarget(test_item, delegate);
+            if (app_mod.state.blink_interval_secs == 5) appkit.setMenuItemState(test_item, true);
+            addItemAndRelease(blink_menu, test_item);
+        }
+
         const blink_intervals = [_]struct { secs: u32, label: [*:0]const u8, sel_name: [*:0]const u8 }{
-            .{ .secs = 5, .label = "Every 5 sec (test)", .sel_name = "blinkInterval5s:" },
             .{ .secs = 15 * 60, .label = "Every 15 min", .sel_name = "blinkInterval15:" },
             .{ .secs = 30 * 60, .label = "Every 30 min", .sel_name = "blinkInterval30:" },
             .{ .secs = 45 * 60, .label = "Every 45 min", .sel_name = "blinkInterval45:" },
@@ -508,8 +525,14 @@ pub fn updateMenu() void {
 
         appkit.addItem(hydration_menu, appkit.createSeparator());
 
+        if (app_mod.state.show_test_settings) {
+            const test_item = appkit.createMenuItem("Every 5 sec (test)", objc.sel("hydrationInterval5s:"), "");
+            appkit.setTarget(test_item, delegate);
+            if (app_mod.state.hydration_interval_secs == 5) appkit.setMenuItemState(test_item, true);
+            addItemAndRelease(hydration_menu, test_item);
+        }
+
         const hydration_intervals = [_]struct { secs: u32, label: [*:0]const u8, sel_name: [*:0]const u8 }{
-            .{ .secs = 5, .label = "Every 5 sec (test)", .sel_name = "hydrationInterval5s:" },
             .{ .secs = 15 * 60, .label = "Every 15 min", .sel_name = "hydrationInterval15:" },
             .{ .secs = 30 * 60, .label = "Every 30 min", .sel_name = "hydrationInterval30:" },
             .{ .secs = 45 * 60, .label = "Every 45 min", .sel_name = "hydrationInterval45:" },
@@ -541,8 +564,14 @@ pub fn updateMenu() void {
 
         appkit.addItem(stretch_menu, appkit.createSeparator());
 
+        if (app_mod.state.show_test_settings) {
+            const test_item = appkit.createMenuItem("Every 5 sec (test)", objc.sel("stretchInterval5s:"), "");
+            appkit.setTarget(test_item, delegate);
+            if (app_mod.state.stretch_interval_secs == 5) appkit.setMenuItemState(test_item, true);
+            addItemAndRelease(stretch_menu, test_item);
+        }
+
         const stretch_intervals = [_]struct { secs: u32, label: [*:0]const u8, sel_name: [*:0]const u8 }{
-            .{ .secs = 5, .label = "Every 5 sec (test)", .sel_name = "stretchInterval5s:" },
             .{ .secs = 15 * 60, .label = "Every 15 min", .sel_name = "stretchInterval15:" },
             .{ .secs = 30 * 60, .label = "Every 30 min", .sel_name = "stretchInterval30:" },
             .{ .secs = 45 * 60, .label = "Every 45 min", .sel_name = "stretchInterval45:" },
@@ -560,6 +589,79 @@ pub fn updateMenu() void {
         appkit.setSubmenu(stretch_item, stretch_menu);
         objc.release(stretch_menu);
         addItemAndRelease(m, stretch_item);
+    }
+
+    // Big Break submenu
+    {
+        const bb_item = appkit.createMenuItem("Big Break", null, "");
+        const bb_menu = appkit.createMenu();
+
+        const bb_toggle = appkit.createMenuItem("Enabled", objc.sel("toggleBigBreak:"), "");
+        appkit.setTarget(bb_toggle, delegate);
+        appkit.setMenuItemState(bb_toggle, app_mod.state.big_break_enabled);
+        addItemAndRelease(bb_menu, bb_toggle);
+
+        {
+            const bb_now = appkit.createMenuItem("Take Big Break Now", objc.sel("takeBigBreakNow:"), "");
+            appkit.setTarget(bb_now, delegate);
+            addItemAndRelease(bb_menu, bb_now);
+        }
+
+        appkit.addItem(bb_menu, appkit.createSeparator());
+
+        // Interval sub-options
+        {
+            const interval_label = appkit.createMenuItem("Interval", null, "");
+            const interval_sub = appkit.createMenu();
+
+            const bb_intervals = [_]struct { secs: u32, label: [*:0]const u8, sel_name: [*:0]const u8 }{
+                .{ .secs = 30 * 60, .label = "Every 30 min", .sel_name = "bigBreakInterval30m:" },
+                .{ .secs = 60 * 60, .label = "Every 60 min", .sel_name = "bigBreakInterval60m:" },
+                .{ .secs = 90 * 60, .label = "Every 90 min", .sel_name = "bigBreakInterval90m:" },
+                .{ .secs = 120 * 60, .label = "Every 120 min", .sel_name = "bigBreakInterval120m:" },
+            };
+            for (bb_intervals) |bi| {
+                const bi_item = appkit.createMenuItem(bi.label, objc.sel(bi.sel_name), "");
+                appkit.setTarget(bi_item, delegate);
+                if (app_mod.state.big_break_interval_secs == bi.secs) {
+                    appkit.setMenuItemState(bi_item, true);
+                }
+                addItemAndRelease(interval_sub, bi_item);
+            }
+
+            appkit.setSubmenu(interval_label, interval_sub);
+            objc.release(interval_sub);
+            addItemAndRelease(bb_menu, interval_label);
+        }
+
+        // Duration sub-options
+        {
+            const duration_label = appkit.createMenuItem("Duration", null, "");
+            const duration_sub = appkit.createMenu();
+
+            const bb_durations = [_]struct { secs: u32, label: [*:0]const u8, sel_name: [*:0]const u8 }{
+                .{ .secs = 2 * 60, .label = "2 min", .sel_name = "bigBreakDuration2m:" },
+                .{ .secs = 5 * 60, .label = "5 min", .sel_name = "bigBreakDuration5m:" },
+                .{ .secs = 10 * 60, .label = "10 min", .sel_name = "bigBreakDuration10m:" },
+                .{ .secs = 15 * 60, .label = "15 min", .sel_name = "bigBreakDuration15m:" },
+            };
+            for (bb_durations) |bd| {
+                const bd_item = appkit.createMenuItem(bd.label, objc.sel(bd.sel_name), "");
+                appkit.setTarget(bd_item, delegate);
+                if (app_mod.state.big_break_duration_secs == bd.secs) {
+                    appkit.setMenuItemState(bd_item, true);
+                }
+                addItemAndRelease(duration_sub, bd_item);
+            }
+
+            appkit.setSubmenu(duration_label, duration_sub);
+            objc.release(duration_sub);
+            addItemAndRelease(bb_menu, duration_label);
+        }
+
+        appkit.setSubmenu(bb_item, bb_menu);
+        objc.release(bb_menu);
+        addItemAndRelease(m, bb_item);
     }
 
     appkit.addItem(m, appkit.createSeparator());

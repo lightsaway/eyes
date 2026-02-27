@@ -96,3 +96,17 @@ pub const kCGNullWindowID: u32 = 0;
 
 // CGWindowList functions
 pub extern "CoreGraphics" fn CGWindowListCopyWindowInfo(option: u32, relativeToWindow: u32) ?*anyopaque;
+
+// CoreFoundation helpers for iterating CGWindowList results
+pub extern "CoreFoundation" fn CFArrayGetCount(theArray: ?*anyopaque) c_long;
+pub extern "CoreFoundation" fn CFArrayGetValueAtIndex(theArray: ?*anyopaque, idx: c_long) ?*anyopaque;
+pub extern "CoreFoundation" fn CFDictionaryGetValue(theDict: ?*anyopaque, key: ?*anyopaque) ?*anyopaque;
+pub extern "CoreFoundation" fn CFStringGetCString(theString: ?*anyopaque, buffer: [*]u8, bufferSize: c_long, encoding: u32) bool;
+pub extern "CoreFoundation" fn CFStringGetLength(theString: ?*anyopaque) c_long;
+
+// CFString encoding
+pub const kCFStringEncodingUTF8: u32 = 0x08000100;
+
+// CGWindowList dictionary keys (extern CFStringRef globals)
+pub extern "CoreGraphics" var kCGWindowOwnerName: ?*anyopaque;
+pub extern "CoreGraphics" var kCGWindowName: ?*anyopaque;

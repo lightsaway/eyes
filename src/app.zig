@@ -25,9 +25,11 @@ pub const AppState = struct {
     is_paused: bool = false,
     meeting_paused: bool = false,
     pause_during_meetings: bool = false,
+    smart_meeting_detection: bool = false,
     mic_check_interval_secs: u32 = 5,
     mic_check_counter: u32 = 0,
     last_mic_active: bool = false,
+    last_window_meeting: bool = false,
 
     // Posture reminder
     posture_reminder_enabled: bool = false,
@@ -101,6 +103,16 @@ pub const AppState = struct {
     hydration_gif: [64]u8 = .{0} ** 64,
     stretch_gif: [64]u8 = .{0} ** 64,
 
+    // Test settings (JSON-only flag)
+    show_test_settings: bool = false,
+
+    // Big break
+    big_break_enabled: bool = false,
+    big_break_interval_secs: u32 = 3600,
+    big_break_duration_secs: u32 = 300,
+    seconds_until_big_break: i32 = 3600,
+    is_big_break: bool = false,
+
     // Statistics (daily, in-memory)
     breaks_taken: u32 = 0,
     breaks_skipped: u32 = 0,
@@ -111,11 +123,14 @@ pub const AppState = struct {
         self.seconds_until_break = @intCast(self.work_interval_secs);
         self.is_on_break = false;
         self.break_seconds_remaining = 0;
+        self.seconds_until_big_break = @intCast(self.big_break_interval_secs);
+        self.is_big_break = false;
     }
 
     pub fn startBreak(self: *AppState) void {
         self.is_on_break = true;
-        self.break_seconds_remaining = @intCast(self.break_duration_secs);
+        const duration = if (self.is_big_break) self.big_break_duration_secs else self.break_duration_secs;
+        self.break_seconds_remaining = @intCast(duration);
         if (self.use_notification) {
             platform.backend.deliverNotification("Eyes \xe2\x80\x94 Break Time", "Look at something 20 feet away");
         } else if (self.gentle_mode) {
@@ -131,6 +146,7 @@ pub const AppState = struct {
         }
         self.is_on_break = false;
         self.break_seconds_remaining = 0;
+        self.is_big_break = false;
         self.seconds_until_break = @intCast(self.work_interval_secs);
         if (!self.use_notification) {
             if (self.gentle_mode) {
@@ -196,6 +212,7 @@ pub fn applyConfig(cfg: config.Config) void {
     state.break_duration_secs = cfg.break_duration_secs;
     state.show_timer_in_menubar = cfg.show_timer_in_menubar;
     state.pause_during_meetings = cfg.pause_during_meetings;
+    state.smart_meeting_detection = cfg.smart_meeting_detection;
     state.mic_check_interval_secs = cfg.mic_check_interval_secs;
     state.posture_reminder_enabled = cfg.posture_reminder_enabled;
     state.posture_interval_secs = cfg.posture_interval_secs;
@@ -222,6 +239,10 @@ pub fn applyConfig(cfg: config.Config) void {
     state.blink_gif = cfg.blink_gif;
     state.hydration_gif = cfg.hydration_gif;
     state.stretch_gif = cfg.stretch_gif;
+    state.show_test_settings = cfg.show_test_settings;
+    state.big_break_enabled = cfg.big_break_enabled;
+    state.big_break_interval_secs = cfg.big_break_interval_secs;
+    state.big_break_duration_secs = cfg.big_break_duration_secs;
     state.reset();
     config.save(cfg);
     std.log.info("Config applied: {d}s work / {d}s break, timer_in_menubar={}", .{ cfg.work_interval_secs, cfg.break_duration_secs, cfg.show_timer_in_menubar });
@@ -234,6 +255,7 @@ pub fn saveConfig() void {
         .break_duration_secs = state.break_duration_secs,
         .show_timer_in_menubar = state.show_timer_in_menubar,
         .pause_during_meetings = state.pause_during_meetings,
+        .smart_meeting_detection = state.smart_meeting_detection,
         .mic_check_interval_secs = state.mic_check_interval_secs,
         .posture_reminder_enabled = state.posture_reminder_enabled,
         .posture_interval_secs = state.posture_interval_secs,
@@ -256,6 +278,10 @@ pub fn saveConfig() void {
         .blink_gif = state.blink_gif,
         .hydration_gif = state.hydration_gif,
         .stretch_gif = state.stretch_gif,
+        .show_test_settings = state.show_test_settings,
+        .big_break_enabled = state.big_break_enabled,
+        .big_break_interval_secs = state.big_break_interval_secs,
+        .big_break_duration_secs = state.big_break_duration_secs,
     });
 }
 
@@ -266,6 +292,7 @@ pub fn loadConfig() void {
     state.break_duration_secs = cfg.break_duration_secs;
     state.show_timer_in_menubar = cfg.show_timer_in_menubar;
     state.pause_during_meetings = cfg.pause_during_meetings;
+    state.smart_meeting_detection = cfg.smart_meeting_detection;
     state.mic_check_interval_secs = cfg.mic_check_interval_secs;
     state.posture_reminder_enabled = cfg.posture_reminder_enabled;
     state.posture_interval_secs = cfg.posture_interval_secs;
@@ -288,11 +315,16 @@ pub fn loadConfig() void {
     state.blink_gif = cfg.blink_gif;
     state.hydration_gif = cfg.hydration_gif;
     state.stretch_gif = cfg.stretch_gif;
+    state.show_test_settings = cfg.show_test_settings;
+    state.big_break_enabled = cfg.big_break_enabled;
+    state.big_break_interval_secs = cfg.big_break_interval_secs;
+    state.big_break_duration_secs = cfg.big_break_duration_secs;
     state.seconds_until_break = @intCast(cfg.work_interval_secs);
     state.seconds_until_posture = @intCast(cfg.posture_interval_secs);
     state.seconds_until_blink = @intCast(cfg.blink_interval_secs);
     state.seconds_until_hydration = @intCast(cfg.hydration_interval_secs);
     state.seconds_until_stretch = @intCast(cfg.stretch_interval_secs);
+    state.seconds_until_big_break = @intCast(cfg.big_break_interval_secs);
     std.log.info("Config loaded: {d}s work / {d}s break", .{ cfg.work_interval_secs, cfg.break_duration_secs });
 }
 
@@ -359,18 +391,29 @@ pub fn tick() void {
     }
 
     // Check microphone state for meeting detection
-    if (state.pause_during_meetings) {
+    if (state.pause_during_meetings or state.smart_meeting_detection) {
         state.mic_check_counter += 1;
         if (state.mic_check_counter >= state.mic_check_interval_secs) {
             state.mic_check_counter = 0;
-            state.last_mic_active = platform.backend.isAnyMicrophoneActive();
+            if (state.pause_during_meetings) {
+                state.last_mic_active = platform.backend.isAnyMicrophoneActive();
+            }
+            if (state.smart_meeting_detection) {
+                state.last_window_meeting = platform.backend.isInMeeting();
+            }
         }
-        if (state.last_mic_active and !state.meeting_paused) {
-            std.log.info("Meeting detected \xe2\x80\x94 mic active, pausing timer", .{});
+        const detected = (state.pause_during_meetings and state.last_mic_active) or
+            (state.smart_meeting_detection and state.last_window_meeting);
+        if (detected and !state.meeting_paused) {
+            if (state.last_mic_active and state.pause_during_meetings) {
+                std.log.info("Meeting detected \xe2\x80\x94 mic active, pausing timer", .{});
+            } else {
+                std.log.info("Meeting detected \xe2\x80\x94 window title match, pausing timer", .{});
+            }
             state.meeting_paused = true;
             menubar.markDirty();
-        } else if (!state.last_mic_active and state.meeting_paused) {
-            std.log.info("Meeting ended \xe2\x80\x94 mic inactive, resuming timer", .{});
+        } else if (!detected and state.meeting_paused) {
+            std.log.info("Meeting ended \xe2\x80\x94 resuming timer", .{});
             state.meeting_paused = false;
             menubar.markDirty();
         }
@@ -419,6 +462,7 @@ pub fn tick() void {
                 state.seconds_until_blink = @intCast(state.blink_interval_secs);
                 state.seconds_until_hydration = @intCast(state.hydration_interval_secs);
                 state.seconds_until_stretch = @intCast(state.stretch_interval_secs);
+                state.seconds_until_big_break = @intCast(state.big_break_interval_secs);
             }
         }
     }
@@ -465,6 +509,17 @@ pub fn tick() void {
         return;
     } else {
         state.seconds_until_break -= 1;
+
+        // Big break countdown
+        if (state.big_break_enabled) {
+            state.seconds_until_big_break -= 1;
+            if (state.seconds_until_big_break <= 0) {
+                state.is_big_break = true;
+                state.seconds_until_big_break = @intCast(state.big_break_interval_secs);
+                state.seconds_until_break = 0; // trigger break immediately
+            }
+        }
+
         if (state.seconds_until_break <= 0) {
             menubar.markDirty();
             state.startBreak();

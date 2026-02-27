@@ -7,6 +7,7 @@ pub const Config = struct {
     break_duration_secs: u32 = 20,
     show_timer_in_menubar: bool = true,
     pause_during_meetings: bool = false,
+    smart_meeting_detection: bool = false,
     mic_check_interval_secs: u32 = 5,
     posture_reminder_enabled: bool = false,
     posture_interval_secs: u32 = 30 * 60,
@@ -29,6 +30,10 @@ pub const Config = struct {
     blink_gif: [64]u8 = .{0} ** 64,
     hydration_gif: [64]u8 = .{0} ** 64,
     stretch_gif: [64]u8 = .{0} ** 64,
+    show_test_settings: bool = false,
+    big_break_enabled: bool = false,
+    big_break_interval_secs: u32 = 3600,
+    big_break_duration_secs: u32 = 300,
 };
 
 const config_dir = ".config/eyes";
@@ -105,6 +110,7 @@ pub fn save(cfg: Config) void {
         \\  "break_duration_secs": {d},
         \\  "show_timer_in_menubar": {s},
         \\  "pause_during_meetings": {s},
+        \\  "smart_meeting_detection": {s},
         \\  "mic_check_interval_secs": {d},
         \\  "posture_reminder_enabled": {s},
         \\  "posture_interval_secs": {d},
@@ -126,7 +132,11 @@ pub fn save(cfg: Config) void {
         \\  "hydration_gif": "{s}",
         \\  "stretch_reminder_enabled": {s},
         \\  "stretch_interval_secs": {d},
-        \\  "stretch_gif": "{s}"
+        \\  "stretch_gif": "{s}",
+        \\  "show_test_settings": {s},
+        \\  "big_break_enabled": {s},
+        \\  "big_break_interval_secs": {d},
+        \\  "big_break_duration_secs": {d}
         \\}}
         \\
     , .{
@@ -134,6 +144,7 @@ pub fn save(cfg: Config) void {
         cfg.break_duration_secs,
         boolStr(cfg.show_timer_in_menubar),
         boolStr(cfg.pause_during_meetings),
+        boolStr(cfg.smart_meeting_detection),
         cfg.mic_check_interval_secs,
         boolStr(cfg.posture_reminder_enabled),
         cfg.posture_interval_secs,
@@ -156,6 +167,10 @@ pub fn save(cfg: Config) void {
         boolStr(cfg.stretch_reminder_enabled),
         cfg.stretch_interval_secs,
         bufSlice(&cfg.stretch_gif),
+        boolStr(cfg.show_test_settings),
+        boolStr(cfg.big_break_enabled),
+        cfg.big_break_interval_secs,
+        cfg.big_break_duration_secs,
     }) catch return;
     file.writeAll(json) catch |err| {
         std.log.warn("config save: write failed: {}", .{err});
@@ -169,6 +184,7 @@ fn parse(data: []const u8) Config {
     cfg.break_duration_secs = parseField(data, "break_duration_secs") orelse cfg.break_duration_secs;
     cfg.show_timer_in_menubar = parseBoolField(data, "show_timer_in_menubar") orelse cfg.show_timer_in_menubar;
     cfg.pause_during_meetings = parseBoolField(data, "pause_during_meetings") orelse cfg.pause_during_meetings;
+    cfg.smart_meeting_detection = parseBoolField(data, "smart_meeting_detection") orelse cfg.smart_meeting_detection;
     cfg.mic_check_interval_secs = parseField(data, "mic_check_interval_secs") orelse cfg.mic_check_interval_secs;
     cfg.posture_reminder_enabled = parseBoolField(data, "posture_reminder_enabled") orelse cfg.posture_reminder_enabled;
     cfg.posture_interval_secs = parseField(data, "posture_interval_secs") orelse cfg.posture_interval_secs;
@@ -197,6 +213,10 @@ fn parse(data: []const u8) Config {
     cfg.stretch_reminder_enabled = parseBoolField(data, "stretch_reminder_enabled") orelse cfg.stretch_reminder_enabled;
     cfg.stretch_interval_secs = parseField(data, "stretch_interval_secs") orelse cfg.stretch_interval_secs;
     parseStringField(data, "stretch_gif", &cfg.stretch_gif);
+    cfg.show_test_settings = parseBoolField(data, "show_test_settings") orelse cfg.show_test_settings;
+    cfg.big_break_enabled = parseBoolField(data, "big_break_enabled") orelse cfg.big_break_enabled;
+    cfg.big_break_interval_secs = parseField(data, "big_break_interval_secs") orelse cfg.big_break_interval_secs;
+    cfg.big_break_duration_secs = parseField(data, "big_break_duration_secs") orelse cfg.big_break_duration_secs;
     return cfg;
 }
 

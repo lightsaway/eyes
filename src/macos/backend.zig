@@ -11,6 +11,7 @@ pub const coreaudio = @import("coreaudio.zig");
 pub const iokit = @import("iokit.zig");
 pub const coreanim = @import("coreanim.zig");
 pub const gifview = @import("gifview.zig");
+pub const meeting = @import("meeting.zig");
 
 // UI modules (macOS implementations)
 pub const overlay = @import("../overlay.zig");
@@ -28,6 +29,10 @@ pub fn isAnyMicrophoneActive() bool {
     return coreaudio.isAnyMicrophoneActive();
 }
 
+pub fn isInMeeting() bool {
+    return meeting.isInMeeting();
+}
+
 pub fn getIdleSeconds() ?u64 {
     return iokit.getIdleSeconds();
 }
@@ -42,6 +47,14 @@ pub fn requestNotificationPermission() void {
 
 pub fn playSystemSound(name: [*:0]const u8) void {
     appkit.playSystemSound(name);
+}
+
+pub fn registerScreenLockNotifications() void {
+    const center = appkit.distributedNotificationCenter();
+    const delegate = objc.msgSend_id(appkit.sharedApplication(), objc.sel("delegate"));
+    appkit.addObserver(center, delegate, objc.sel("screenDidLock:"), "com.apple.screenIsLocked");
+    appkit.addObserver(center, delegate, objc.sel("screenDidUnlock:"), "com.apple.screenIsUnlocked");
+    std.log.info("Registered for screen lock/unlock notifications", .{});
 }
 
 /// Check if DND / Focus mode is active by reading the macOS assertions file.
