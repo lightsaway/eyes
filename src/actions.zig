@@ -283,6 +283,14 @@ pub fn setBigBreakDuration(secs: u32) void {
     menubar_mod.updateMenu();
 }
 
+pub fn setBigBreakEveryN(n: u32) void {
+    app_mod.state.big_break_every_n = n;
+    app_mod.state.small_breaks_since_big = 0;
+    app_mod.saveConfig();
+    menubar_mod.markDirty();
+    menubar_mod.updateMenu();
+}
+
 // --- Presets ---
 
 pub fn applyPreset(work_secs: u32, brk_secs: u32) void {
@@ -315,6 +323,7 @@ pub fn applyPreset(work_secs: u32, brk_secs: u32) void {
         .big_break_enabled = app_mod.state.big_break_enabled,
         .big_break_interval_secs = app_mod.state.big_break_interval_secs,
         .big_break_duration_secs = app_mod.state.big_break_duration_secs,
+        .big_break_every_n = app_mod.state.big_break_every_n,
     });
     menubar_mod.markDirty();
     menubar_mod.updateMenu();

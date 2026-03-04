@@ -659,6 +659,32 @@ pub fn updateMenu() void {
             addItemAndRelease(bb_menu, duration_label);
         }
 
+        // Trigger mode: time vs every N breaks
+        {
+            const trigger_label = appkit.createMenuItem("Trigger", null, "");
+            const trigger_sub = appkit.createMenu();
+
+            const trigger_opts = [_]struct { n: u32, label: [*:0]const u8, sel_name: [*:0]const u8 }{
+                .{ .n = 0, .label = "By Time Interval", .sel_name = "bigBreakEveryN0:" },
+                .{ .n = 3, .label = "Every 3 Breaks", .sel_name = "bigBreakEveryN3:" },
+                .{ .n = 4, .label = "Every 4 Breaks", .sel_name = "bigBreakEveryN4:" },
+                .{ .n = 5, .label = "Every 5 Breaks", .sel_name = "bigBreakEveryN5:" },
+                .{ .n = 6, .label = "Every 6 Breaks", .sel_name = "bigBreakEveryN6:" },
+            };
+            for (trigger_opts) |opt| {
+                const opt_item = appkit.createMenuItem(opt.label, objc.sel(opt.sel_name), "");
+                appkit.setTarget(opt_item, delegate);
+                if (app_mod.state.big_break_every_n == opt.n) {
+                    appkit.setMenuItemState(opt_item, true);
+                }
+                addItemAndRelease(trigger_sub, opt_item);
+            }
+
+            appkit.setSubmenu(trigger_label, trigger_sub);
+            objc.release(trigger_sub);
+            addItemAndRelease(bb_menu, trigger_label);
+        }
+
         appkit.setSubmenu(bb_item, bb_menu);
         objc.release(bb_menu);
         addItemAndRelease(m, bb_item);

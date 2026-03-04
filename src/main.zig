@@ -127,6 +127,11 @@ const delegate_methods = [_]Method{
     .{ .sel_name = "bigBreakDuration5m:", .impl = @ptrCast(&bigBreakDuration5m) },
     .{ .sel_name = "bigBreakDuration10m:", .impl = @ptrCast(&bigBreakDuration10m) },
     .{ .sel_name = "bigBreakDuration15m:", .impl = @ptrCast(&bigBreakDuration15m) },
+    .{ .sel_name = "bigBreakEveryN0:", .impl = @ptrCast(&bigBreakEveryN0) },
+    .{ .sel_name = "bigBreakEveryN3:", .impl = @ptrCast(&bigBreakEveryN3) },
+    .{ .sel_name = "bigBreakEveryN4:", .impl = @ptrCast(&bigBreakEveryN4) },
+    .{ .sel_name = "bigBreakEveryN5:", .impl = @ptrCast(&bigBreakEveryN5) },
+    .{ .sel_name = "bigBreakEveryN6:", .impl = @ptrCast(&bigBreakEveryN6) },
 
     // Screen lock notifications
     .{ .sel_name = "screenDidLock:", .impl = @ptrCast(&screenDidLock) },
@@ -460,6 +465,21 @@ fn bigBreakDuration10m(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
 }
 fn bigBreakDuration15m(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
     actions.setBigBreakDuration(15 * 60);
+}
+fn bigBreakEveryN0(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.setBigBreakEveryN(0);
+}
+fn bigBreakEveryN3(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.setBigBreakEveryN(3);
+}
+fn bigBreakEveryN4(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.setBigBreakEveryN(4);
+}
+fn bigBreakEveryN5(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.setBigBreakEveryN(5);
+}
+fn bigBreakEveryN6(_: objc.id, _: objc.SEL, _: objc.id) callconv(.c) void {
+    actions.setBigBreakEveryN(6);
 }
 
 // Sound callbacks

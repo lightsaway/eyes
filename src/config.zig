@@ -34,6 +34,7 @@ pub const Config = struct {
     big_break_enabled: bool = false,
     big_break_interval_secs: u32 = 3600,
     big_break_duration_secs: u32 = 300,
+    big_break_every_n: u32 = 0, // 0 = use time interval, >0 = every N small breaks
 };
 
 const config_dir = ".config/eyes";
@@ -136,7 +137,8 @@ pub fn save(cfg: Config) void {
         \\  "show_test_settings": {s},
         \\  "big_break_enabled": {s},
         \\  "big_break_interval_secs": {d},
-        \\  "big_break_duration_secs": {d}
+        \\  "big_break_duration_secs": {d},
+        \\  "big_break_every_n": {d}
         \\}}
         \\
     , .{
@@ -171,6 +173,7 @@ pub fn save(cfg: Config) void {
         boolStr(cfg.big_break_enabled),
         cfg.big_break_interval_secs,
         cfg.big_break_duration_secs,
+        cfg.big_break_every_n,
     }) catch return;
     file.writeAll(json) catch |err| {
         std.log.warn("config save: write failed: {}", .{err});
@@ -217,6 +220,7 @@ fn parse(data: []const u8) Config {
     cfg.big_break_enabled = parseBoolField(data, "big_break_enabled") orelse cfg.big_break_enabled;
     cfg.big_break_interval_secs = parseField(data, "big_break_interval_secs") orelse cfg.big_break_interval_secs;
     cfg.big_break_duration_secs = parseField(data, "big_break_duration_secs") orelse cfg.big_break_duration_secs;
+    cfg.big_break_every_n = parseField(data, "big_break_every_n") orelse cfg.big_break_every_n;
     return cfg;
 }
 

@@ -48,6 +48,29 @@ const messages = [_][*:0]const u8{
     "Time to relax your eyes",
 };
 
+const big_break_messages = [_][*:0]const u8{
+    "Time for a real break - get up and move!",
+    "Stand up, stretch, and walk around",
+    "Go for a short walk, your body needs it",
+    "Step away from the desk - move your legs!",
+    "Big break! Do some stretches or take a walk",
+    "Your body has been sitting too long - move it!",
+    "Get up! Walk around for a few minutes",
+    "Time to recharge - walk, stretch, breathe",
+    "Take a real break - do some squats or lunges",
+    "Stand up and shake it out - you earned this break",
+    "Go grab some water and take a lap",
+    "Move your body! A short walk does wonders",
+    "Big break time - roll your neck, stretch your back",
+    "Step outside if you can - fresh air helps",
+    "Get moving! Do jumping jacks or walk the stairs",
+    "Your eyes AND body need this - get up and go",
+    "Walk to the window - look far, breathe deep",
+    "Stretch everything - arms, legs, back, neck",
+    "Time to stand tall and reset your posture",
+    "Take a lap around the room - keep the blood flowing",
+};
+
 const stretch_prompts = [_][*:0]const u8{
     "Roll your shoulders back slowly",
     "Stretch your arms above your head",
@@ -60,6 +83,8 @@ const stretch_prompts = [_][*:0]const u8{
 };
 
 var stretch_index: usize = 0;
+var big_break_msg_index: usize = 0;
+var msg_index: usize = 0;
 
 // Sound name lookup: 0=None, 1=Tink, 2=Pop, 3=Glass, 4=Purr, 5=Hero
 const sound_names = [_]?[*:0]const u8{
@@ -71,9 +96,15 @@ const sound_names = [_]?[*:0]const u8{
     "Hero",
 };
 
-fn pickMessage() [*:0]const u8 {
-    const idx = @as(usize, @intCast(@mod(std.time.timestamp(), messages.len)));
-    return messages[idx];
+fn pickMessage(is_big: bool) [*:0]const u8 {
+    if (is_big) {
+        const msg = big_break_messages[big_break_msg_index % big_break_messages.len];
+        big_break_msg_index +%= 1;
+        return msg;
+    }
+    const msg = messages[msg_index % messages.len];
+    msg_index +%= 1;
+    return msg;
 }
 
 fn pickStretch() [*:0]const u8 {
@@ -236,8 +267,10 @@ pub fn showOverlay(state: *app_mod.AppState) void {
     if (num_screens == 0) return;
 
     const main_screen = appkit.mainScreen();
-    const msg_text = pickMessage();
+    const is_big = state.is_big_break;
+    const msg_text = pickMessage(is_big);
     const stretch_text = pickStretch();
+    const active_ring_radius: CGFloat = if (is_big) 120.0 else ring_radius;
     var time_buf = state.formatBreakRemaining();
     const time_str: [*:0]const u8 = @ptrCast(&time_buf);
 
@@ -298,7 +331,7 @@ pub fn showOverlay(state: *app_mod.AppState) void {
         appkit.setTextColor(msg, text_color);
         appkit.setAlignment(msg, appkit.NSTextAlignmentCenter);
         appkit.setViewFrame(msg, NSRect{
-            .origin = NSPoint{ .x = center_x - 300.0, .y = center_y + ring_radius + 30.0 },
+            .origin = NSPoint{ .x = center_x - 300.0, .y = center_y + active_ring_radius + 30.0 },
             .size = NSSize{ .width = 600.0, .height = 40.0 },
         });
         appkit.setWantsLayer(msg, true);
@@ -313,7 +346,7 @@ pub fn showOverlay(state: *app_mod.AppState) void {
 
         // --- Circular ring area ---
         // We use a host NSView to contain the ring layers
-        const ring_host_size: CGFloat = (ring_radius + ring_line_width) * 2.0 + 40.0;
+        const ring_host_size: CGFloat = (active_ring_radius + ring_line_width) * 2.0 + 40.0;
         const NSView = objc.getClass("NSView");
         const ring_host = objc.msgSend_id1(objc.alloc(NSView), objc.sel("initWithFrame:"), NSRect{
             .origin = NSPoint{ .x = center_x - ring_host_size / 2.0, .y = center_y - ring_host_size / 2.0 },
@@ -327,7 +360,7 @@ pub fn showOverlay(state: *app_mod.AppState) void {
         const ring_cy = ring_host_size / 2.0;
 
         // Create arc path
-        const arc_path = createRingPath(ring_cx, ring_cy, ring_radius);
+        const arc_path = createRingPath(ring_cx, ring_cy, active_ring_radius);
 
         // Background track ring
         const track_layer = ca.createShapeLayer();
@@ -381,7 +414,7 @@ pub fn showOverlay(state: *app_mod.AppState) void {
         appkit.setTextColor(stretch, sub_color);
         appkit.setAlignment(stretch, appkit.NSTextAlignmentCenter);
         appkit.setViewFrame(stretch, NSRect{
-            .origin = NSPoint{ .x = center_x - 300.0, .y = center_y - ring_radius - 60.0 },
+            .origin = NSPoint{ .x = center_x - 300.0, .y = center_y - active_ring_radius - 60.0 },
             .size = NSSize{ .width = 600.0, .height = 30.0 },
         });
         appkit.addSubview(content, stretch);
@@ -389,7 +422,7 @@ pub fn showOverlay(state: *app_mod.AppState) void {
 
         // --- Buttons (main screen only, non-strict) ---
         if (is_main and !is_strict) {
-            const btn_y = center_y - ring_radius - 110.0;
+            const btn_y = center_y - active_ring_radius - 110.0;
 
             const skip_btn = appkit.createButton("Skip", delegate, objc.sel("skipBreak:"));
             appkit.setViewFrame(skip_btn, NSRect{

@@ -110,7 +110,9 @@ pub const AppState = struct {
     big_break_enabled: bool = false,
     big_break_interval_secs: u32 = 3600,
     big_break_duration_secs: u32 = 300,
+    big_break_every_n: u32 = 0, // 0 = time interval, >0 = every N small breaks
     seconds_until_big_break: i32 = 3600,
+    small_breaks_since_big: u32 = 0,
     is_big_break: bool = false,
 
     // Statistics (daily, in-memory)
@@ -124,6 +126,7 @@ pub const AppState = struct {
         self.is_on_break = false;
         self.break_seconds_remaining = 0;
         self.seconds_until_big_break = @intCast(self.big_break_interval_secs);
+        self.small_breaks_since_big = 0;
         self.is_big_break = false;
     }
 
@@ -243,6 +246,7 @@ pub fn applyConfig(cfg: config.Config) void {
     state.big_break_enabled = cfg.big_break_enabled;
     state.big_break_interval_secs = cfg.big_break_interval_secs;
     state.big_break_duration_secs = cfg.big_break_duration_secs;
+    state.big_break_every_n = cfg.big_break_every_n;
     state.reset();
     config.save(cfg);
     std.log.info("Config applied: {d}s work / {d}s break, timer_in_menubar={}", .{ cfg.work_interval_secs, cfg.break_duration_secs, cfg.show_timer_in_menubar });
@@ -282,6 +286,7 @@ pub fn saveConfig() void {
         .big_break_enabled = state.big_break_enabled,
         .big_break_interval_secs = state.big_break_interval_secs,
         .big_break_duration_secs = state.big_break_duration_secs,
+        .big_break_every_n = state.big_break_every_n,
     });
 }
 
@@ -319,6 +324,7 @@ pub fn loadConfig() void {
     state.big_break_enabled = cfg.big_break_enabled;
     state.big_break_interval_secs = cfg.big_break_interval_secs;
     state.big_break_duration_secs = cfg.big_break_duration_secs;
+    state.big_break_every_n = cfg.big_break_every_n;
     state.seconds_until_break = @intCast(cfg.work_interval_secs);
     state.seconds_until_posture = @intCast(cfg.posture_interval_secs);
     state.seconds_until_blink = @intCast(cfg.blink_interval_secs);
@@ -472,6 +478,19 @@ pub fn tick() void {
         state.break_seconds_remaining -= 1;
         if (state.break_seconds_remaining <= 0) {
             state.breaks_taken += 1;
+            // Track small breaks for "every N breaks" big break mode
+            if (state.big_break_enabled and state.big_break_every_n > 0 and !state.is_big_break) {
+                state.small_breaks_since_big += 1;
+                if (state.small_breaks_since_big >= state.big_break_every_n) {
+                    state.small_breaks_since_big = 0;
+                    // Schedule big break as the next break
+                    state.is_big_break = true;
+                    menubar.markDirty();
+                    state.endBreak();
+                    state.startBreak();
+                    return;
+                }
+            }
             menubar.markDirty();
             state.endBreak();
         } else {
@@ -511,7 +530,7 @@ pub fn tick() void {
         state.seconds_until_break -= 1;
 
         // Big break countdown
-        if (state.big_break_enabled) {
+        if (state.big_break_enabled and state.big_break_every_n == 0) {
             state.seconds_until_big_break -= 1;
             if (state.seconds_until_big_break <= 0) {
                 state.is_big_break = true;
