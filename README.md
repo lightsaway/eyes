@@ -281,10 +281,10 @@ zig build test   # Test
 ### Cross-platform testing from macOS
 
 ```sh
-# Docker — validate Linux build
+# Docker — validate Linux build (headless, no GUI)
 make docker-build
 
-# OrbStack — build in a Linux VM via Nix
+# OrbStack — build in a Linux VM via Nix (headless, no GUI)
 make orb-setup          # One-time setup
 make orb-build          # Build
 
@@ -292,6 +292,70 @@ make orb-build          # Build
 brew install act
 act -j build-linux -W .github/workflows/ci.yml
 ```
+
+### GUI testing on Linux via UTM
+
+To visually test the tray icon, overlay, pills, and animations you need a Linux VM with a desktop. [UTM](https://mac.getutm.app/) is free and runs natively on Apple Silicon.
+
+**1. Install UTM and create the VM**
+
+```sh
+brew install --cask utm
+```
+
+Open UTM → **Create a New Virtual Machine** → **Virtualize** → **Linux**.
+Download [Ubuntu 24.04 Desktop (ARM64)](https://ubuntu.com/download/desktop) and select the ISO. Give it at least 4 GB RAM, 2 CPU cores, and 25 GB disk. Install Ubuntu through the GUI installer, then reboot.
+
+**2. Set up the VM (one-time)**
+
+Inside the Ubuntu VM, open a terminal:
+
+```sh
+# Runtime libraries
+sudo apt update
+sudo apt install -y libgtk-3-0 libappindicator3-1 libnotify4 \
+  libcanberra0 libxss1
+
+# Enable tray icon support in GNOME
+sudo apt install -y gnome-shell-extension-appindicator
+gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com
+# Log out and back in for the extension to activate
+
+# Install Nix (provides Zig + all build deps)
+curl -L https://nixos.org/nix/install | sh -s -- --daemon
+# Restart terminal after install
+```
+
+**3. Build and run**
+
+```sh
+# Option A — clone the repo
+git clone https://github.com/lightsaway/eyes.git
+cd eyes
+
+# Option B — use a UTM shared directory
+# In UTM: VM Settings → Sharing → add your project folder
+# Inside Ubuntu it mounts at /media/share/
+
+# Build with Nix (no apt dev packages needed)
+nix develop --command zig build
+
+# Run
+./zig-out/bin/eyes
+```
+
+You should see the eye icon in the system tray. Click it to open the menu and verify:
+
+- Countdown timer in the tray label
+- All menu items and submenus
+- "Take Break Now" → fullscreen overlay with countdown ring
+- Gentle mode → translucent slide-down banner
+- Posture/blink/hydration/stretch pills (enable in menu)
+
+**Tips:**
+- UTM shared directories let you edit code on macOS and build/run in the VM without git
+- GNOME on Wayland may limit some features (strict mode, idle detection) — switch to "Ubuntu on Xorg" at the login screen to test X11 behavior
+- Take a VM snapshot before testing so you can revert quickly
 
 ### Make Targets
 
