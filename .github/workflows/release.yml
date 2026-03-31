@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build-macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,10 +17,6 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: 0.15.2
-
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Run tests
         run: zig build test
@@ -44,15 +40,68 @@ jobs:
           cd zig-out
           zip -r ../Eyes-macos-arm64.zip Eyes.app
 
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: |
+            eyes-macos-arm64.tar.gz
+            Eyes-macos-arm64.zip
+            zig-out/Eyes-*.dmg
+
+  build-linux:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Run tests
+        run: nix develop --command zig build test
+
+      - name: Build release binary
+        run: nix develop --command zig build -Doptimize=ReleaseFast
+
+      - name: Show binary info
+        run: |
+          file zig-out/bin/eyes
+          ls -lh zig-out/bin/eyes
+
+      - name: Package tarball
+        run: |
+          cd zig-out/bin
+          tar czf ../../eyes-linux-${{ matrix.arch }}.tar.gz eyes
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}-artifacts
+          path: eyes-linux-${{ matrix.arch }}.tar.gz
+
+  release:
+    needs: [build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
       - name: Generate checksums
         run: |
-          shasum -a 256 eyes-macos-arm64.tar.gz > checksums.txt
-          shasum -a 256 Eyes-macos-arm64.zip >> checksums.txt
-          shasum -a 256 zig-out/Eyes-${{ steps.version.outputs.version }}.dmg >> checksums.txt
+          sha256sum eyes-*.tar.gz Eyes-*.zip Eyes-*.dmg 2>/dev/null > checksums.txt || true
           cat checksums.txt
-
-      - name: Show binary size
-        run: ls -lh zig-out/bin/eyes
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -61,5 +110,39 @@ jobs:
           files: |
             eyes-macos-arm64.tar.gz
             Eyes-macos-arm64.zip
-            zig-out/Eyes-${{ steps.version.outputs.version }}.dmg
+            Eyes-*.dmg
+            eyes-linux-x86_64.tar.gz
+            eyes-linux-aarch64.tar.gz
             checksums.txt
+
+  update-homebrew:
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute SHA256s
+        id: sha
+        run: |
+          for asset in eyes-macos-arm64 eyes-linux-x86_64 eyes-linux-aarch64; do
+            url="https://github.com/lightsaway/eyes/releases/download/${GITHUB_REF_NAME}/${asset}.tar.gz"
+            sha=$(curl -sL "$url" | sha256sum | cut -d' ' -f1)
+            key=$(echo "$asset" | tr '-' '_')
+            echo "${key}=${sha}" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Update Homebrew tap
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: lightsaway/homebrew-eyes
+          event-type: update-formula
+          client-payload: |
+            {
+              "version": "${{ steps.version.outputs.version }}",
+              "sha256_macos_arm64": "${{ steps.sha.outputs.eyes_macos_arm64 }}",
+              "sha256_linux_x86_64": "${{ steps.sha.outputs.eyes_linux_x86_64 }}",
+              "sha256_linux_aarch64": "${{ steps.sha.outputs.eyes_linux_aarch64 }}"
+            }

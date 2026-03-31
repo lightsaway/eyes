@@ -13,6 +13,10 @@ pub const coreanim = @import("coreanim.zig");
 pub const gifview = @import("gifview.zig");
 pub const meeting = @import("meeting.zig");
 
+// Lifecycle (entry point)
+pub const lifecycle = @import("lifecycle.zig");
+pub const run = lifecycle.run;
+
 // UI modules (macOS implementations)
 pub const overlay = @import("../overlay.zig");
 pub const gentle = @import("../gentle.zig");

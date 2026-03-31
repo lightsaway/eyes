@@ -25,7 +25,12 @@ pub fn build(b: *std.Build) void {
         exe.root_module.linkFramework("IOKit", .{});
         exe.root_module.linkFramework("UserNotifications", .{});
     } else if (target.result.os.tag == .linux) {
-        // TODO: link X11, GTK, libappindicator, libnotify, etc.
+        exe.root_module.linkSystemLibrary("gtk+-3.0", .{});
+        exe.root_module.linkSystemLibrary("appindicator3-0.1", .{});
+        exe.root_module.linkSystemLibrary("libnotify", .{});
+        exe.root_module.linkSystemLibrary("libcanberra", .{});
+        exe.root_module.linkSystemLibrary("Xss", .{});
+        exe.root_module.linkSystemLibrary("X11", .{});
     } else if (target.result.os.tag == .windows) {
         // TODO: link user32, shell32, ole32, etc.
     }

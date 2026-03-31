@@ -1,4 +1,4 @@
-# Eyes — Break reminder for macOS
+# Eyes — Break reminder for macOS & Linux
 # Usage: make [target]
 
 APP_NAME    := Eyes
@@ -8,6 +8,7 @@ BUNDLE_BIN  := $(BUNDLE)/Contents/MacOS/eyes
 DMG_NAME    := $(APP_NAME)-$(VERSION).dmg
 DMG_PATH    := zig-out/$(DMG_NAME)
 INSTALL_DIR := /Applications
+UNAME_S     := $(shell uname -s)
 
 # ─── Build ────────────────────────────────────────────────────────
 
@@ -91,6 +92,55 @@ install: bundle ## Install Eyes.app to /Applications
 uninstall: ## Remove Eyes.app from /Applications
 	@rm -rf $(INSTALL_DIR)/$(APP_NAME).app
 	@echo "Removed $(INSTALL_DIR)/$(APP_NAME).app"
+
+# ─── Linux (cross-build & VM) ────────────────────────────────────
+
+.PHONY: docker-build
+docker-build: ## Build Linux binary via Docker
+	docker build --platform linux/amd64 -f Dockerfile.linux-build -t eyes-linux-build .
+	@echo "Linux build succeeded — binary in container at zig-out/bin/eyes"
+
+.PHONY: docker-extract
+docker-extract: docker-build ## Build and extract Linux binary to zig-out/eyes-linux
+	docker create --name eyes-tmp eyes-linux-build 2>/dev/null || true
+	docker cp eyes-tmp:/app/zig-out/bin/eyes zig-out/eyes-linux
+	docker rm eyes-tmp
+	@echo "Extracted to zig-out/eyes-linux"
+
+.PHONY: nix-build
+nix-build: ## Build using Nix flake
+	nix build
+
+.PHONY: nix-shell
+nix-shell: ## Enter Nix dev shell with all dependencies
+	nix develop
+
+.PHONY: orb-setup
+orb-setup: ## Create OrbStack Ubuntu VM with Nix installed
+	@orb create ubuntu eyes-dev 2>/dev/null || echo "VM 'eyes-dev' already exists"
+	orb run eyes-dev -- sh -c 'command -v nix >/dev/null 2>&1 || (curl -L https://nixos.org/nix/install | sh -s -- --daemon --yes)'
+	@echo "VM ready — run: make orb-build"
+
+.PHONY: orb-build
+orb-build: ## Build Linux binary inside OrbStack VM via Nix
+	orb run -m eyes-dev -- bash -lc 'cd /Users/$(USER)/code/open-source/eyes && nix develop --command zig build'
+	@echo "Linux build succeeded"
+
+.PHONY: orb-run
+orb-run: orb-build ## Build and run inside OrbStack VM (headless — for smoke testing)
+	orb run -m eyes-dev -- bash -lc 'cd /Users/$(USER)/code/open-source/eyes && timeout 3 zig-out/bin/eyes 2>&1 || true'
+
+# ─── Linux Install ───────────────────────────────────────────────
+
+.PHONY: linux-install
+linux-install: build ## Install eyes binary to ~/.local/bin (Linux)
+ifeq ($(UNAME_S),Linux)
+	@mkdir -p $(HOME)/.local/bin
+	cp zig-out/bin/eyes $(HOME)/.local/bin/eyes
+	@echo "Installed to ~/.local/bin/eyes"
+else
+	@echo "linux-install only works on Linux"
+endif
 
 # ─── Clean ────────────────────────────────────────────────────────
 

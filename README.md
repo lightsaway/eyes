@@ -1,171 +1,154 @@
 # Eyes
 
-Break reminder for macOS. Lightweight menu bar app that follows the 20-20-20 rule — every 20 minutes, look at something 20 feet away for 20 seconds.
+Break reminder for macOS and Linux. Lightweight tray app that follows the 20-20-20 rule — every 20 minutes, look at something 20 feet away for 20 seconds.
 
-Built with Zig and native macOS frameworks. No Electron, no Swift, no runtime dependencies. ~200KB binary.
+Built with Zig and native platform frameworks. No Electron, no runtime dependencies.
 
 ## Features
 
-- **20-20-20 break timer** with fullscreen overlay, countdown, and stretch prompts
+- **20-20-20 break timer** with fullscreen overlay, countdown ring, and stretch prompts
 - **Multiple break modes** — fullscreen overlay, gentle banner, or native notification
 - **Strict mode** — blocks keyboard and mouse during breaks
 - **Blink reminder** — floating pill with blinking eye animation
 - **Posture reminder** — rising arrow nudge to straighten up
 - **Hydration reminder** — periodic drink water prompt
+- **Stretch reminder** — periodic stretch prompt
 - **Meeting detection** — pauses automatically when microphone is active
-- **Idle detection** — resets timer when you step away (via IOKit)
-- **Do Not Disturb** — respects macOS Focus mode
+- **Idle detection** — resets timer when you step away
+- **Do Not Disturb** — respects system Focus/DND mode
 - **Screen lock as break** — counts lock time toward break duration
-- **Multi-monitor** — overlay covers all screens
-- **Dark/light theme** — adapts to system appearance
-- **Global hotkey** — Cmd+Shift+E to toggle break
-- **Configurable intervals** — presets + custom work/break durations
+- **Multi-monitor** — overlay covers all screens simultaneously
+- **Big break** — longer breaks at configurable intervals
+- **Configurable intervals** — presets (20/20, 30/30, 45/5, 60/5) + custom durations
 - **Configurable sounds** — Tink, Pop, Glass, Purr, Hero, or silent
-- **Start at login** — via LaunchAgent
+- **Start at login** — LaunchAgent (macOS) or XDG autostart (Linux)
 - **Daily stats** — breaks taken, skipped, and delayed in the menu
 
 Config is saved to `~/.config/eyes/config.json`.
 
+## Install
+
+### Homebrew (macOS & Linux)
+
+```sh
+brew install lightsaway/eyes/eyes
+```
+
+### Nix (any platform)
+
+```sh
+# Run directly
+nix run github:lightsaway/eyes
+
+# Install to profile
+nix profile install github:lightsaway/eyes
+```
+
+### AUR (Arch Linux)
+
+```sh
+yay -S eyes-break-reminder
+```
+
+### From binary
+
+Download the latest release for your platform from [Releases](../../releases):
+
+| Platform | File |
+|----------|------|
+| macOS (Apple Silicon) | `eyes-macos-arm64.tar.gz` or `Eyes-macos-arm64.zip` |
+| Linux (x86_64) | `eyes-linux-x86_64.tar.gz` |
+| Linux (aarch64) | `eyes-linux-aarch64.tar.gz` |
+
+### From source
+
+```sh
+# macOS — just needs Zig
+make install    # builds + copies Eyes.app to /Applications
+
+# Linux — needs Zig + GTK3 dev libraries
+# Via Nix (recommended — installs all deps automatically):
+nix develop
+zig build -Doptimize=ReleaseFast
+cp zig-out/bin/eyes ~/.local/bin/
+
+# Via apt (Ubuntu/Debian):
+sudo apt install libgtk-3-dev libappindicator3-dev libnotify-dev \
+  libcanberra-dev libxss-dev libx11-dev
+zig build -Doptimize=ReleaseFast
+cp zig-out/bin/eyes ~/.local/bin/
+```
+
 ## Requirements
 
+**macOS:**
 - macOS 13+
 - [Zig 0.15.2](https://ziglang.org/download/)
-- Accessibility permission (for global hotkey and strict mode)
+
+**Linux:**
+- GTK3, libappindicator3, libnotify, libcanberra, libXss
+- [Zig 0.15.2](https://ziglang.org/download/)
+- Or just [Nix](https://nixos.org/download/) — `nix develop` provides everything
 
 ## Build
 
 ```sh
-# Debug build
-make build
+make build          # Debug build
+make release        # Optimized release build
+make test           # Run tests
+make fmt            # Format source
+```
 
-# Release build (optimized)
-make release
+### Linux cross-build (from macOS)
 
-# Run tests
-make test
+```sh
+# Via Docker
+make docker-build
 
-# Format source
-make fmt
+# Via OrbStack + Nix
+make orb-setup      # One-time: create Ubuntu VM + install Nix
+make orb-build      # Build inside VM using Nix flake
 ```
 
 ## Run
 
 ```sh
-# Debug
-make run
-
-# Release
-make run-release
+make run            # Debug
+make run-release    # Release
 ```
 
-Eyes appears as a menu bar icon (eye). Click it to access all settings — interval, sounds, break mode, reminders, and more. No dock icon.
+Eyes appears as a tray/menu bar icon (eye). Click it to access all settings — interval, sounds, break mode, reminders, and more. No dock icon.
 
-## Install
+## Platform Details
 
-### From source
+### macOS
 
-```sh
-make install
-```
+- Native AppKit/ObjC bindings — no Swift, no XIB
+- Status bar icon with SF Symbols
+- Fullscreen overlay with Core Animation ring
+- Gentle mode uses NSVisualEffectView (frosted glass)
+- Meeting detection via CoreAudio (mic) + CGWindowList (window titles)
+- Idle detection via IOKit HIDIdleTime
+- DND detection reads Focus mode assertions
+- Start at login via LaunchAgent
+- ~200KB binary
 
-This builds a release binary, creates `Eyes.app`, and copies it to `/Applications`.
+### Linux
 
-### From DMG
-
-Download the latest `.dmg` from [Releases](../../releases), open it, and drag Eyes to Applications.
-
-### Uninstall
-
-```sh
-make uninstall
-```
-
-## App Bundle
-
-```sh
-# Create Eyes.app bundle
-make bundle
-
-# Verify
-ls zig-out/Eyes.app/Contents/
-# Info.plist  MacOS/  Resources/
-```
-
-## Create DMG
-
-```sh
-make dmg
-# → zig-out/Eyes-0.1.0.dmg
-```
-
-## Release
-
-Full release pipeline — clean, test, build, bundle, and package:
-
-```sh
-make dist
-```
-
-### Cutting a release
-
-```sh
-# Tag the version
-make tag
-# → Tags v0.1.0
-
-# Push tag to trigger GitHub Actions release
-git push origin v0.1.0
-```
-
-The [release workflow](.github/workflows/release.yml) runs tests, builds a release binary, creates the app bundle, DMG, tarball, zip, and SHA-256 checksums, then publishes them as a GitHub Release.
-
-### Release artifacts
-
-| File | Contents |
-|---|---|
-| `Eyes-0.1.0.dmg` | Disk image with Eyes.app |
-| `Eyes-macos-arm64.zip` | Zipped app bundle |
-| `eyes-macos-arm64.tar.gz` | Standalone binary |
-| `checksums.txt` | SHA-256 hashes |
-
-## CI
-
-Every push and PR to `main` runs the [CI workflow](.github/workflows/ci.yml):
-
-- `zig fmt` check
-- Debug build
-- Unit tests
-- Release build
-- App bundle verification
-
-## Make Targets
-
-```
-make help
-```
-
-| Target | Description |
-|---|---|
-| `build` | Compile debug binary |
-| `release` | Compile optimized release binary |
-| `small` | Compile size-optimized binary |
-| `test` | Run unit tests |
-| `run` | Build and run (debug) |
-| `run-release` | Build and run (release) |
-| `bundle` | Create Eyes.app bundle (release) |
-| `dmg` | Create DMG disk image |
-| `install` | Install Eyes.app to /Applications |
-| `uninstall` | Remove Eyes.app from /Applications |
-| `clean` | Remove build artifacts |
-| `fmt` | Format all Zig source files |
-| `check` | Check for compilation errors |
-| `dist` | Full release: clean, test, bundle, DMG |
-| `tag` | Create a git tag for the current version |
-| `size` | Show binary size |
+- GTK3 with cairo rendering
+- System tray via libappindicator3 (works on GNOME, KDE, XFCE)
+- Fullscreen overlay with cairo countdown ring + RGBA transparency
+- Gentle mode with slide-in/out animation
+- Meeting detection via `/proc` scanning (Zoom, Teams, Slack, etc.)
+- Idle detection via X11 XScreenSaver extension (Wayland: limited)
+- Mic detection via `/proc/asound` capture device state
+- Notifications via libnotify
+- Sound via libcanberra (freedesktop sound themes)
+- Start at login via XDG autostart desktop file
 
 ## Configuration
 
-All settings are accessible from the menu bar dropdown. Config persists to `~/.config/eyes/config.json`:
+All settings are accessible from the tray dropdown. Config persists to `~/.config/eyes/config.json`:
 
 ```json
 {
@@ -173,19 +156,25 @@ All settings are accessible from the menu bar dropdown. Config persists to `~/.c
   "break_duration_secs": 20,
   "show_timer_in_menubar": true,
   "pause_during_meetings": false,
+  "smart_meeting_detection": false,
   "posture_reminder_enabled": false,
   "posture_interval_secs": 1800,
   "blink_reminder_enabled": false,
   "blink_interval_secs": 1800,
   "hydration_reminder_enabled": false,
   "hydration_interval_secs": 2700,
+  "stretch_reminder_enabled": false,
+  "stretch_interval_secs": 1800,
   "idle_threshold_secs": 300,
   "break_sound": 1,
   "respect_dnd": true,
   "screen_lock_as_break": true,
   "use_notification": false,
   "gentle_mode": false,
-  "strict_mode": false
+  "strict_mode": false,
+  "big_break_enabled": false,
+  "big_break_interval_secs": 3600,
+  "big_break_duration_secs": 300
 }
 ```
 
@@ -193,29 +182,141 @@ All settings are accessible from the menu bar dropdown. Config persists to `~/.c
 
 ```
 src/
-  main.zig          Entry point, ObjC delegate registration
-  app.zig           App state, timer logic
-  menubar.zig       Status bar icon and dropdown menu
-  overlay.zig       Fullscreen break overlay (multi-monitor)
-  gentle.zig        Gentle mode banner
-  blink.zig         Blink reminder pill
-  posture.zig       Posture reminder pill
-  hydration.zig     Hydration reminder pill
-  config.zig        JSON config load/save
-  launchagent.zig   Start-at-login via LaunchAgent
+  main.zig              Entry point (thin dispatcher)
+  platform.zig          Comptime platform selection
+  app.zig               App state machine, timer logic
+  actions.zig           Platform-agnostic action handlers
+  config.zig            JSON config load/save
   macos/
-    objc.zig        ObjC runtime bridge (msgSend wrappers)
-    appkit.zig      AppKit bindings
-    foundation.zig  Foundation bindings
-    coregraphics.zig CoreGraphics bindings
-    coreaudio.zig   CoreAudio mic detection
-    iokit.zig       IOKit idle time detection
+    backend.zig         macOS backend interface
+    lifecycle.zig       NSApplication lifecycle, ObjC delegate
+    objc.zig            ObjC runtime bridge (msgSend wrappers)
+    appkit.zig          AppKit bindings
+    foundation.zig      Foundation bindings
+    coregraphics.zig    CoreGraphics bindings
+    coreanim.zig        Core Animation bindings
+    coreaudio.zig       CoreAudio mic detection
+    iokit.zig           IOKit idle time detection
+    meeting.zig         Window title meeting detection
+    gifview.zig         Animated GIF loader
+  linux/
+    backend.zig         Linux backend interface
+    lifecycle.zig       GTK application lifecycle
+    gtk.zig             GTK3/GLib/cairo C bindings
+    overlay.zig         Fullscreen overlay (cairo ring)
+    gentle.zig          Translucent banner
+    menubar.zig         AppIndicator tray + GtkMenu
+    autostart.zig       XDG desktop file
+    idle.zig            X11 XScreenSaver idle detection
+    mic.zig             /proc/asound mic detection
+    meeting.zig         /proc process scanning
+    notify.zig          libnotify notifications
+    sound.zig           libcanberra sound playback
+    reminders/          Pill reminder wrappers
+  overlay.zig           macOS fullscreen overlay
+  gentle.zig            macOS gentle banner
+  menubar.zig           macOS status bar menu
+  launchagent.zig       macOS start-at-login
+  reminders/
+    pill.zig            Shared pill core
+    pill_layout.zig     Multi-pill layout
+    posture.zig         Posture reminder
+    blink.zig           Blink reminder
+    hydration.zig       Hydration reminder
+    stretch.zig         Stretch reminder
+build.zig               Build configuration
+build.zig.zon           Package manifest
+flake.nix               Nix flake (dev shell + package)
+Makefile                Build/test/release commands
+packaging/
+  homebrew/             Homebrew formula + tap automation
+  aur/                  Arch Linux PKGBUILD
 resources/
-  Info.plist        App bundle metadata
-build.zig           Build configuration
-build.zig.zon       Package manifest
-Makefile            Build/test/release commands
+  Info.plist            macOS app bundle metadata
+  AppIcon.icns          macOS app icon
 ```
+
+## CI/CD
+
+Every push and PR runs the [CI workflow](.github/workflows/ci.yml):
+
+- **macOS** — format check, debug build, tests, release build, app bundle verification
+- **Linux** — debug build, tests, release build (deps via Nix)
+
+### Releasing
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The [release workflow](.github/workflows/release.yml) automatically:
+
+1. Builds release binaries for macOS (arm64) and Linux (x86_64, aarch64)
+2. Creates app bundle and DMG (macOS)
+3. Publishes GitHub Release with all artifacts + checksums
+4. Updates the Homebrew tap formula
+
+### Release artifacts
+
+| File | Platform |
+|------|----------|
+| `Eyes-0.1.0.dmg` | macOS disk image |
+| `Eyes-macos-arm64.zip` | macOS app bundle |
+| `eyes-macos-arm64.tar.gz` | macOS binary |
+| `eyes-linux-x86_64.tar.gz` | Linux x86_64 binary |
+| `eyes-linux-aarch64.tar.gz` | Linux aarch64 binary |
+| `checksums.txt` | SHA-256 hashes |
+
+## Development
+
+### With Nix (recommended)
+
+```sh
+nix develop      # Enter dev shell with all deps (works on macOS and Linux)
+zig build        # Build
+zig build test   # Test
+```
+
+### Cross-platform testing from macOS
+
+```sh
+# Docker — validate Linux build
+make docker-build
+
+# OrbStack — build in a Linux VM via Nix
+make orb-setup          # One-time setup
+make orb-build          # Build
+
+# act — run CI workflows locally
+brew install act
+act -j build-linux -W .github/workflows/ci.yml
+```
+
+### Make Targets
+
+| Target | Description |
+|--------|-------------|
+| `build` | Compile debug binary |
+| `release` | Compile optimized release binary |
+| `test` | Run unit tests |
+| `run` | Build and run (debug) |
+| `run-release` | Build and run (release) |
+| `bundle` | Create Eyes.app bundle (macOS) |
+| `dmg` | Create DMG disk image (macOS) |
+| `install` | Install to /Applications (macOS) |
+| `uninstall` | Remove from /Applications (macOS) |
+| `linux-install` | Install to ~/.local/bin (Linux) |
+| `docker-build` | Build Linux binary via Docker |
+| `docker-extract` | Extract Linux binary from Docker |
+| `orb-setup` | Create OrbStack VM with Nix |
+| `orb-build` | Build in OrbStack via Nix |
+| `nix-build` | Build with Nix flake |
+| `nix-shell` | Enter Nix dev shell |
+| `clean` | Remove build artifacts |
+| `fmt` | Format source |
+| `dist` | Full release pipeline |
+| `tag` | Create git version tag |
 
 ## License
 

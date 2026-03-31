@@ -1,0 +1,77 @@
+# Place this file at .github/workflows/update.yml in the lightsaway/homebrew-eyes repo.
+
+name: Update Formula
+
+on:
+  repository_dispatch:
+    types: [update-formula]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update formula
+        env:
+          VERSION: ${{ github.event.client_payload.version }}
+          SHA_MACOS_ARM64: ${{ github.event.client_payload.sha256_macos_arm64 }}
+          SHA_LINUX_X86_64: ${{ github.event.client_payload.sha256_linux_x86_64 }}
+          SHA_LINUX_AARCH64: ${{ github.event.client_payload.sha256_linux_aarch64 }}
+        run: |
+          cat > Formula/eyes.rb << 'FORMULA'
+          class Eyes < Formula
+            desc "Lightweight break reminder app — follow the 20-20-20 rule"
+            homepage "https://github.com/lightsaway/eyes"
+            version "VERSION_PLACEHOLDER"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/lightsaway/eyes/releases/download/v#{version}/eyes-macos-arm64.tar.gz"
+                sha256 "SHA_MACOS_ARM64_PLACEHOLDER"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/lightsaway/eyes/releases/download/v#{version}/eyes-linux-aarch64.tar.gz"
+                sha256 "SHA_LINUX_AARCH64_PLACEHOLDER"
+              else
+                url "https://github.com/lightsaway/eyes/releases/download/v#{version}/eyes-linux-x86_64.tar.gz"
+                sha256 "SHA_LINUX_X86_64_PLACEHOLDER"
+              end
+            end
+
+            on_linux do
+              depends_on "gtk+3"
+              depends_on "libappindicator"
+              depends_on "libnotify"
+              depends_on "libcanberra"
+            end
+
+            def install
+              bin.install "eyes"
+            end
+
+            test do
+              assert_predicate bin/"eyes", :executable?
+            end
+          end
+          FORMULA
+
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION/" Formula/eyes.rb
+          sed -i "s/SHA_MACOS_ARM64_PLACEHOLDER/$SHA_MACOS_ARM64/" Formula/eyes.rb
+          sed -i "s/SHA_LINUX_X86_64_PLACEHOLDER/$SHA_LINUX_X86_64/" Formula/eyes.rb
+          sed -i "s/SHA_LINUX_AARCH64_PLACEHOLDER/$SHA_LINUX_AARCH64/" Formula/eyes.rb
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/eyes.rb
+          git commit -m "Update eyes to ${{ github.event.client_payload.version }}"
+          git push
