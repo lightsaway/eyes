@@ -37,6 +37,10 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
+    // Auto-format on every build
+    const fmt_step = b.addFmt(.{ .paths = &.{ "src", "build.zig" } });
+    b.getInstallStep().dependOn(&fmt_step.step);
+
     // App bundle step
     const bundle_step = b.step("bundle", "Create Eyes.app bundle");
     bundle_step.dependOn(b.getInstallStep());

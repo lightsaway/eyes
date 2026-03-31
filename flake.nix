@@ -4,12 +4,14 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
     flake-utils.url = "github:numtide/flake-utils";
+    zig-overlay.url = "github:mitchellh/zig-overlay";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, zig-overlay }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        zig = zig-overlay.packages.${system}."0.15.2";
         isLinux = pkgs.stdenv.isLinux;
         isDarwin = pkgs.stdenv.isDarwin;
 
@@ -35,16 +37,15 @@
 
       in {
         devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [
+          buildInputs = [
             zig
           ] ++ (if isLinux then linuxBuildInputs else [])
             ++ (if isDarwin then darwinBuildInputs else []);
 
-          # Help zig find pkg-config paths on Linux
           shellHook = if isLinux then ''
-            echo "Eyes dev shell (Linux) — run: zig build"
+            echo "Eyes dev shell (Linux, Zig $(zig version)) — run: zig build"
           '' else ''
-            echo "Eyes dev shell (macOS) — run: zig build"
+            echo "Eyes dev shell (macOS, Zig $(zig version)) — run: zig build"
           '';
         };
 
@@ -53,12 +54,12 @@
           version = "0.1.0";
           src = ./.;
 
-          nativeBuildInputs = [ pkgs.zig pkgs.pkg-config ];
+          nativeBuildInputs = [ zig pkgs.pkg-config ];
           buildInputs = if isLinux then linuxBuildInputs else darwinBuildInputs;
 
           buildPhase = ''
             export ZIG_GLOBAL_CACHE_DIR=$(mktemp -d)
-            zig build --release=fast
+            zig build -Doptimize=ReleaseFast
           '';
 
           installPhase = ''

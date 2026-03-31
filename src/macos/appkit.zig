@@ -448,8 +448,7 @@ pub fn deliverNotification(title: [*:0]const u8, body: [*:0]const u8) void {
     const content = objc.allocInit(objc.getClass("UNMutableNotificationContent"));
     objc.msgSend_void1(content, objc.sel("setTitle:"), objc.nsString(title));
     objc.msgSend_void1(content, objc.sel("setBody:"), objc.nsString(body));
-    objc.msgSend_void1(content, objc.sel("setSound:"),
-        objc.msgSend_id(objc.getClass("UNNotificationSound"), objc.sel("defaultSound")));
+    objc.msgSend_void1(content, objc.sel("setSound:"), objc.msgSend_id(objc.getClass("UNNotificationSound"), objc.sel("defaultSound")));
 
     // Create request with unique ID
     const request = objc.msgSend_id3(
