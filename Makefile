@@ -62,7 +62,7 @@ icon: ## Convert $(ICON_SRC) to AppIcon.icns (set ICON_SRC=path to override)
 # ─── App Bundle ───────────────────────────────────────────────────
 
 .PHONY: bundle
-bundle: release icon ## Create Eyes.app bundle (release)
+bundle: release ## Create Eyes.app bundle (release)
 	@mkdir -p $(BUNDLE)/Contents/MacOS $(BUNDLE)/Contents/Resources
 	@cp zig-out/bin/eyes $(BUNDLE_BIN)
 	@cp resources/Info.plist $(BUNDLE)/Contents/Info.plist
